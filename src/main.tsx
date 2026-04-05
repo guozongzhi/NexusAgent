@@ -105,29 +105,22 @@ function NexusApp({ oneShotQuery }: { oneShotQuery?: string }) {
   useEffect(() => {
     const init = async () => {
       const conf = await loadConfig();
-      // 这里根据实际配置字段做校验
-      const API_KEY = (conf as any).NEXUS_API_KEY || (conf as any).apiKey || process.env.OPENAI_API_KEY;
-      if (!API_KEY) {
-        setInOnboarding(true);
-      } else {
-        setHasConfig(true);
-        setApiReady(true);
-      }
+      // 响应用户需求：不绑定 API，不强制核查，直接点亮终端环境
+      const API_KEY = (conf as any).NEXUS_API_KEY || (conf as any).apiKey || process.env.OPENAI_API_KEY || 'UNSET_KEY_WAITING_FOR_USER';
+      
+      setHasConfig(true);
+      setInOnboarding(false); // 直接跳过强制引导模式
 
       const history = await loadSession(cwd);
       if (history && history.length > 0) {
         setMessages([
           { role: 'system', content: `已恢复 \`${cwd}\` 的历史会话。`, displayRole: 'system' } as DisplayMessage
         ]);
-        // Actually load history into engine inside run
       }
 
-      if (API_KEY) {
-        const baseURL = (conf as any).NEXUS_BASE_URL || (conf as any).baseURL || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
-        const apiKey = API_KEY;
-        const adapter = new OpenAIAdapter(baseURL, apiKey);
-        engineRef.current = new QueryEngine(adapter);
-      }
+      const baseURL = (conf as any).NEXUS_BASE_URL || (conf as any).baseURL || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
+      const adapter = new OpenAIAdapter(baseURL, API_KEY);
+      engineRef.current = new QueryEngine(adapter);
 
       if (oneShotQuery) {
         setTimeout(() => handleSubmit(oneShotQuery), 100);
