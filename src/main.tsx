@@ -106,7 +106,7 @@ function NexusApp({ oneShotQuery }: { oneShotQuery?: string }) {
     const init = async () => {
       const conf = await loadConfig();
       // 响应用户需求：不绑定 API，不强制核查，直接点亮终端环境
-      const API_KEY = (conf as any).NEXUS_API_KEY || (conf as any).apiKey || process.env.OPENAI_API_KEY || 'UNSET_KEY_WAITING_FOR_USER';
+      const API_KEY = conf.apiKey || process.env.OPENAI_API_KEY || 'UNSET_KEY_WAITING_FOR_USER';
       
       setHasConfig(true);
       setInOnboarding(false); // 直接跳过强制引导模式
@@ -118,7 +118,7 @@ function NexusApp({ oneShotQuery }: { oneShotQuery?: string }) {
         ]);
       }
 
-      const baseURL = (conf as any).NEXUS_BASE_URL || (conf as any).baseURL || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
+      const baseURL = conf.baseUrl || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
       const adapter = new OpenAIAdapter(baseURL, API_KEY);
       engineRef.current = new QueryEngine(adapter);
 
@@ -137,7 +137,14 @@ function NexusApp({ oneShotQuery }: { oneShotQuery?: string }) {
         exit,
         clear: () => setMessages([]),
         reloadConfig: async () => {
-           setMessages(prev => [...prev, { role: 'system', content: '配置已重载！', displayRole: 'system' } as DisplayMessage]);
+           const newConf = await loadConfig();
+           const newAPI_KEY = newConf.apiKey || process.env.OPENAI_API_KEY || 'UNSET_KEY_WAITING_FOR_USER';
+           const newBaseURL = newConf.baseUrl || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
+           
+           const newAdapter = new OpenAIAdapter(newBaseURL, newAPI_KEY);
+           engineRef.current = new QueryEngine(newAdapter);
+           
+           setMessages(prev => [...prev, { role: 'system', content: `配置已热重载！\n当前 BaseURL: ${newBaseURL}\n当前模型: ${newConf.model || '未指定'}`, displayRole: 'system' } as DisplayMessage]);
         }
       });
       
@@ -176,7 +183,7 @@ function NexusApp({ oneShotQuery }: { oneShotQuery?: string }) {
 
       const response = await engineRef.current.run({
         systemPrompt: sysPrompt,
-        model: (conf as any).NEXUS_MODEL || process.env.OPENAI_MODEL || 'gpt-4o',
+        model: conf.model || process.env.OPENAI_MODEL || 'gpt-4o',
         messages: engineMsgs,
         toolDefs,
         toolContext: { cwd } as ToolUseContext,
