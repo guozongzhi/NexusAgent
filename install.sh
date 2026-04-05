@@ -63,7 +63,18 @@ EOF
 chmod +x "$BUN_BIN_DIR/nexus"
 echo -e "${COLOR_SUCCESS}✔ 软连创建成功！全局指令 nexus 已硬性注入系统路径。${COLOR_RESET}"
 
-# 5. 可用性自检
+# 5. 用户环境变量注入检查 (解决 zsh: command not found 问题)
+ZSHRC_FILE="$HOME/.zshrc"
+if [ -f "$ZSHRC_FILE" ]; then
+    if ! grep -q "\.bun/bin" "$ZSHRC_FILE"; then
+        echo -e "\n${COLOR_WARN}☁ 检测到您的 .zshrc 未包含 Bun 环境变量，正在帮您自动注入...${COLOR_RESET}"
+        echo 'export PATH="$HOME/.bun/bin:$PATH"' >> "$ZSHRC_FILE"
+        export PATH="$HOME/.bun/bin:$PATH"
+        echo -e "${COLOR_SUCCESS}✔ 已成功在 ~/.zshrc 中注入 PATH。${COLOR_RESET}"
+    fi
+fi
+
+# 6. 可用性自检
 echo -e "\n${COLOR_INFO}► 执行预验：测试配置环境与连通性${COLOR_RESET}"
 
 if [[ -z "$NEXUS_API_KEY" && -z "$OPENAI_API_KEY" ]]; then
@@ -78,6 +89,8 @@ fi
 # 顺利结束
 echo -e "\n============================================="
 echo -e "${COLOR_SUCCESS}★ Nexus Agent 设施已全部部署完毕！${COLOR_RESET}"
-echo -e "在当前或新的终端面板中，敲击下方指令立刻开启：\n"
+echo -e "请在当前终端执行以下命令使环境立即生效：\n"
+echo -e "  ➜  ${COLOR_INFO}source ~/.zshrc${COLOR_RESET}\n"
+echo -e "生效后，敲击下方指令立刻开启智能终端：\n"
 echo -e "  ➜  ${COLOR_INFO}nexus${COLOR_RESET}\n"
 echo -e "============================================="
