@@ -1,0 +1,44 @@
+/**
+ * FileWriteTool — 创建或覆盖写入文件
+ * 自动创建父目录
+ */
+import { z } from 'zod';
+import { writeFile, mkdir } from 'node:fs/promises';
+import path from 'node:path';
+import { registerTool } from '../Tool.ts';
+import type { ToolResult, ToolUseContext } from '../types/index.ts';
+
+const inputSchema = z.object({
+  filePath: z.string().describe('文件的绝对路径或相对于工作目录的路径'),
+  content: z.string().describe('要写入的完整文件内容'),
+});
+
+export const FileWriteTool = registerTool({
+  name: 'file_write',
+  description: '创建新文件或覆盖写入已有文件的全部内容。父目录会自动创建。',
+  inputSchema,
+  isReadOnly: false,
+
+  async call(input, context): Promise<ToolResult> {
+    const absPath = path.isAbsolute(input.filePath)
+      ? input.filePath
+      : path.resolve(context.cwd, input.filePath);
+
+    try {
+      // 确保父目录存在
+      await mkdir(path.dirname(absPath), { recursive: true });
+
+      await writeFile(absPath, input.content, 'utf-8');
+
+      const lines = input.content.split('\n').length;
+      const bytes = Buffer.byteLength(input.content, 'utf-8');
+
+      return {
+        output: `文件已写入: ${absPath} (${lines} 行, ${bytes} bytes)`,
+      };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { output: `[ERROR] 写入文件失败: ${msg}`, isError: true };
+    }
+  },
+});
