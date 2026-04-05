@@ -270,9 +270,11 @@ function NexusApp({ oneShotQuery }: { oneShotQuery?: string }) {
             </Box>
           )}
           
-          <Box marginTop={1}>
-            <NexusSpinner mode={spinnerMode as any} />
-          </Box>
+          {isProcessing && (
+            <Box marginTop={1}>
+              <NexusSpinner mode={spinnerMode as any} />
+            </Box>
+          )}
         </Box>
       )}
 
