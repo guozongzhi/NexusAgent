@@ -69,29 +69,37 @@ function nextMsgId(): number {
 }
 
 function StaticMessageBlock({ item }: { item: CompletedMessage }) {
-  let tag = '';
-  switch (item.role) {
-    case 'user':
-      tag = chalk.blue.bold('▶ You');
-      break;
-    case 'assistant':
-      tag = chalk.magenta.bold('◆ Nexus');
-      break;
-    default:
-      tag = chalk.yellow('⚠ System');
-      break;
+  const termWidth = process.stdout.columns || 80;
+  const separator = chalk.gray('─'.repeat(termWidth));
+
+  if (item.role === 'user') {
+    return (
+      <Box flexDirection="column">
+        <Text>{separator}</Text>
+        <Box paddingX={1} marginTop={1} marginBottom={1}>
+          <Text color="cyan" bold>{`> `}</Text>
+          <Text>{item.content}</Text>
+        </Box>
+        <Text>{separator}</Text>
+      </Box>
+    );
   }
 
-  const content = item.role === 'assistant'
-    ? (renderMarkdown ? renderMarkdown(item.content) : item.content)
-    : item.content;
+  if (item.role === 'assistant') {
+    const content = renderMarkdown ? renderMarkdown(item.content) : item.content;
+    return (
+      <Box flexDirection="column" marginBottom={1} paddingX={1}>
+        <Box marginTop={1}>
+          <Text>{content}</Text>
+        </Box>
+      </Box>
+    );
+  }
 
+  // system
   return (
     <Box flexDirection="column" marginBottom={1} paddingX={1}>
-      <Text>{tag}</Text>
-      <Box paddingLeft={2}>
-        <Text>{content}</Text>
-      </Box>
+      <Text color="yellow" dimColor>{`⚠ ${item.content}`}</Text>
     </Box>
   );
 }
@@ -383,7 +391,7 @@ function NexusApp({ oneShotQuery }: { oneShotQuery?: string }) {
 
       {/* 流式文本（处理中时显示） */}
       {isProcessing && streamingText && (
-        <Box paddingLeft={3} marginBottom={1}>
+        <Box paddingX={1} marginBottom={1}>
           <Text>{renderMarkdown ? renderMarkdown(streamingText) : streamingText}</Text>
         </Box>
       )}
@@ -414,7 +422,7 @@ function NexusApp({ oneShotQuery }: { oneShotQuery?: string }) {
         <Box flexDirection="column">
           {!isProcessing && (
             <Box paddingX={1}>
-              <Text bold color="blue">▶ You: </Text>
+              <Text color="cyan" bold>{`> `}</Text>
               <TextInput
                 value={inputValue}
                 onChange={setInputValue}
