@@ -69,28 +69,24 @@ function nextMsgId(): number {
 }
 
 function StaticMessageBlock({ item }: { item: CompletedMessage }) {
-  const termWidth = process.stdout.columns || 80;
-  const separator = chalk.gray('─'.repeat(termWidth));
-
   if (item.role === 'user') {
+    // Claude Code 风格：黄色左侧竖条 + 文本
     return (
-      <Box flexDirection="column">
-        <Text>{separator}</Text>
-        <Box paddingX={1} marginTop={1} marginBottom={1}>
-          <Text color="cyan" bold>{`> `}</Text>
-          <Text>{item.content}</Text>
-        </Box>
-        <Text>{separator}</Text>
+      <Box marginTop={1}>
+        <Text color="yellow">{'▎'}</Text>
+        <Text> {item.content}</Text>
       </Box>
     );
   }
 
   if (item.role === 'assistant') {
     const content = renderMarkdown ? renderMarkdown(item.content) : item.content;
+    // Claude Code 风格：● 圆点前缀 + 文本
     return (
-      <Box flexDirection="column" marginBottom={1} paddingX={1}>
-        <Box marginTop={1}>
-          <Text>{content}</Text>
+      <Box flexDirection="column" marginBottom={1}>
+        <Box>
+          <Text color="white" bold>{'● '}</Text>
+          <Text wrap="wrap">{content}</Text>
         </Box>
       </Box>
     );
@@ -98,8 +94,8 @@ function StaticMessageBlock({ item }: { item: CompletedMessage }) {
 
   // system
   return (
-    <Box flexDirection="column" marginBottom={1} paddingX={1}>
-      <Text color="yellow" dimColor>{`⚠ ${item.content}`}</Text>
+    <Box marginBottom={1} paddingX={1}>
+      <Text dimColor>{item.content}</Text>
     </Box>
   );
 }
@@ -391,8 +387,9 @@ function NexusApp({ oneShotQuery }: { oneShotQuery?: string }) {
 
       {/* 流式文本（处理中时显示） */}
       {isProcessing && streamingText && (
-        <Box paddingX={1} marginBottom={1}>
-          <Text>{renderMarkdown ? renderMarkdown(streamingText) : streamingText}</Text>
+        <Box marginBottom={1}>
+          <Text color="white" bold>{'● '}</Text>
+          <Text wrap="wrap">{renderMarkdown ? renderMarkdown(streamingText) : streamingText}</Text>
         </Box>
       )}
 
@@ -421,8 +418,8 @@ function NexusApp({ oneShotQuery }: { oneShotQuery?: string }) {
       ) : (
         <Box flexDirection="column">
           {!isProcessing && (
-            <Box paddingX={1}>
-              <Text color="cyan" bold>{`> `}</Text>
+            <Box>
+              <Text dimColor bold>{'> '}</Text>
               <TextInput
                 value={inputValue}
                 onChange={setInputValue}

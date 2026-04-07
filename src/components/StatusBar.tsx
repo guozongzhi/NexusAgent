@@ -1,11 +1,11 @@
 /**
- * StatusBar — 底部状态栏
- * 参考 Claude Code 的 StatusLine 组件
- * 持久展示模型名称、Token 计数、工作目录
+ * StatusBar — Claude Code 风格底部状态栏
+ *
+ * 布局：左侧 "? for shortcuts"，右侧模型/token/状态信息
  */
 import React from 'react';
 import { Box, Text } from 'ink';
-import { shortenPath, formatTokens } from '../utils/path.ts';
+import { formatTokens } from '../utils/path.ts';
 
 interface StatusBarProps {
   model: string;
@@ -15,31 +15,26 @@ interface StatusBarProps {
 }
 
 export function StatusBar({ model, cwd, tokenCount, isProcessing }: StatusBarProps): React.ReactNode {
+  // 右侧信息片段
+  const infoParts: string[] = [];
+  if (tokenCount && tokenCount > 0) {
+    infoParts.push(`${formatTokens(tokenCount)} tokens`);
+  }
+
   return (
-    <Box width="100%" gap={2} paddingX={1}>
-      {/* 模型 */}
-      <Text dimColor>
-        model: <Text color="yellowBright">{model}</Text>
-      </Text>
+    <Box width="100%" justifyContent="space-between" paddingX={1}>
+      {/* 左侧：快捷键提示 */}
+      <Text dimColor>? for shortcuts</Text>
 
-      {/* Token 统计 */}
-      {tokenCount !== undefined && tokenCount > 0 && (
-        <Text dimColor>
-          tokens: <Text color="cyan">{formatTokens(tokenCount)}</Text>
-        </Text>
-      )}
-
-      {/* 工作目录 */}
-      <Text dimColor>
-        cwd: {shortenPath(cwd)}
-      </Text>
-
-      {/* 处理状态 */}
-      {isProcessing && (
-        <Text color="cyan">●</Text>
-      )}
+      {/* 右侧：模型 + token + 处理状态 */}
+      <Box gap={1}>
+        {isProcessing && (
+          <Text color="cyan">●</Text>
+        )}
+        {infoParts.length > 0 && (
+          <Text dimColor>{infoParts.join(' · ')}</Text>
+        )}
+      </Box>
     </Box>
   );
 }
-
-// P2-1: shortenPath / formatTokens 已提取到 utils/path.ts
