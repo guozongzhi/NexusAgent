@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { exec } from 'node:child_process';
 import { registerTool } from '../Tool.ts';
 import type { ToolResult, ToolUseContext } from '../types/index.ts';
+import { validateCommand } from '../security/pathGuard.ts';
 
 const inputSchema = z.object({
   command: z.string().describe('要执行的 Shell 命令'),
@@ -19,6 +20,12 @@ export const BashTool = registerTool({
   isReadOnly: false,
 
   async call(input, context): Promise<ToolResult> {
+    // P1-5: 命令安全校验
+    const check = validateCommand(input.command);
+    if (!check.safe) {
+      return { output: `[BLOCKED] ${check.reason}`, isError: true };
+    }
+
     const timeout = input.timeout ?? 30_000;
 
     return new Promise((resolve) => {

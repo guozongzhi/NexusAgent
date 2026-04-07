@@ -68,11 +68,19 @@ export interface StreamEventError {
   error: string;
 }
 
+/** P2-4: Token 使用量事件 */
+export interface StreamEventUsage {
+  type: 'usage';
+  promptTokens: number;
+  completionTokens: number;
+}
+
 export type StreamEvent =
   | StreamEventTextDelta
   | StreamEventToolUse
   | StreamEventDone
-  | StreamEventError;
+  | StreamEventError
+  | StreamEventUsage;
 
 // ============================================================
 // Tool 系统

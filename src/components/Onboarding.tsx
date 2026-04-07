@@ -5,6 +5,8 @@
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import { Box, Text, useInput } from 'ink';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 
 // ─── 类型 ────────────────────────────────────────────────
 type StepId = 'env-check' | 'api-check' | 'security' | 'done';
@@ -196,8 +198,7 @@ const ONBOARDING_FLAG_PATH = `${process.env['HOME'] ?? '/tmp'}/.nexus/.onboarded
 
 export function hasCompletedOnboarding(): boolean {
   try {
-    const fs = require('fs');
-    return fs.existsSync(ONBOARDING_FLAG_PATH);
+    return existsSync(ONBOARDING_FLAG_PATH);
   } catch {
     return false;
   }
@@ -205,11 +206,9 @@ export function hasCompletedOnboarding(): boolean {
 
 export function markOnboardingComplete(): void {
   try {
-    const fs = require('fs');
-    const path = require('path');
-    const dir = path.dirname(ONBOARDING_FLAG_PATH);
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(ONBOARDING_FLAG_PATH, new Date().toISOString());
+    const dir = dirname(ONBOARDING_FLAG_PATH);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(ONBOARDING_FLAG_PATH, new Date().toISOString());
   } catch {
     // 忽略写入失败
   }

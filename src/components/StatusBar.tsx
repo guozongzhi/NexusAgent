@@ -5,6 +5,7 @@
  */
 import React from 'react';
 import { Box, Text } from 'ink';
+import { shortenPath, formatTokens } from '../utils/path.ts';
 
 interface StatusBarProps {
   model: string;
@@ -30,7 +31,7 @@ export function StatusBar({ model, cwd, tokenCount, isProcessing }: StatusBarPro
 
       {/* 工作目录 */}
       <Text dimColor>
-        cwd: {shortenCwd(cwd)}
+        cwd: {shortenPath(cwd)}
       </Text>
 
       {/* 处理状态 */}
@@ -41,17 +42,4 @@ export function StatusBar({ model, cwd, tokenCount, isProcessing }: StatusBarPro
   );
 }
 
-// ─── 辅助 ────────────────────────────────────────────────
-function formatTokens(n: number): string {
-  if (n < 1000) return String(n);
-  if (n < 100_000) return (n / 1000).toFixed(1) + 'k';
-  return Math.round(n / 1000) + 'k';
-}
-
-function shortenCwd(p: string): string {
-  const home = process.env['HOME'] ?? '';
-  if (home && p.startsWith(home)) {
-    return '~' + p.slice(home.length);
-  }
-  return p;
-}
+// P2-1: shortenPath / formatTokens 已提取到 utils/path.ts

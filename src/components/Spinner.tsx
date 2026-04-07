@@ -35,33 +35,31 @@ interface NexusSpinnerProps {
 }
 
 export function NexusSpinner({ mode, label, hasActiveTools }: NexusSpinnerProps): React.ReactNode {
-  const [frame, setFrame] = useState(0);
-  const [dotFrame, setDotFrame] = useState(0);
-  const [elapsedMs, setElapsedMs] = useState(0);
+  // 单一 tick 驱动所有动画，减少 setState 调用次数
+  const [tick, setTick] = useState(0);
   const startRef = useRef(Date.now());
   const [randomVerb] = useState(() => SPINNER_VERBS[Math.floor(Math.random() * SPINNER_VERBS.length)] ?? 'Thinking');
 
-  // 帧动画 - 80ms 一帧
+  // 单一定时器，120ms 间隔（比 80ms 更温和，仍足够流畅）
   useEffect(() => {
-    const timer = setInterval(() => {
-      setFrame((f) => (f + 1) % BRAILLE_FRAMES.length);
-      setDotFrame((f) => (f + 1) % DOT_FRAMES.length);
-      setElapsedMs(Date.now() - startRef.current);
-    }, 80);
+    const timer = setInterval(() => setTick((t) => t + 1), 120);
     return () => clearInterval(timer);
   }, []);
 
   // 重置计时器
   useEffect(() => {
     startRef.current = Date.now();
-    setElapsedMs(0);
   }, [mode]);
+
+  // 从 tick 派生所有值，不额外 setState
+  const frame = tick % BRAILLE_FRAMES.length;
+  const dotFrame = tick % DOT_FRAMES.length;
+  const elapsedMs = Date.now() - startRef.current;
 
   const verb = label ?? getVerbForMode(mode, randomVerb);
   const elapsed = formatElapsed(elapsedMs);
   const color: string = getColorForMode(mode, elapsedMs);
 
-  // 闪烁效果（3秒+无新内容视为卡顿）
   const isStalled = mode === 'thinking' && elapsedMs > 10000;
 
   return (

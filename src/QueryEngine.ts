@@ -97,6 +97,12 @@ export class QueryEngine {
             stopReason = event.stopReason;
             break;
 
+          case 'usage':
+            // P2-4: 累计 token 使用量
+            totalPromptTokens += event.promptTokens;
+            totalCompletionTokens += event.completionTokens;
+            break;
+
           case 'error':
             // 错误直接返回
             return {

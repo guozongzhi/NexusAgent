@@ -3,6 +3,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import { registerTool } from '../Tool.ts';
 import type { ToolResult } from '../types/index.ts';
+import { validatePath, validateWriteSize } from '../security/pathGuard.ts';
 
 /**
  * 标准化空显字符串，应对 LLM 换行符输出误差
@@ -25,12 +26,9 @@ function findActualString(fileContent: string, searchString: string): string | n
   if (!normalizedSearch) return null;
 
   // 粗略处理：如果是基于代码行的，可以尝试只匹配行的核心内容。
-  // 简易起见，这里假设文件内容和搜索内容的纯净版能匹配上
-  // 这里可以写更复杂的忽略空白符策略，目前如果精确匹配不到并且首尾trim后依然不行，则抛错要求重试
-  
   const contentStart = fileContent.indexOf(normalizedSearch.substring(0, Math.min(20, normalizedSearch.length)));
   if (contentStart !== -1) {
-    // 作为一个兜底策略，可以考虑更高级的 diff，但大部分情况 LLM 会重新输出精确的代码
+    // 兜底策略
   }
   
   return null;
@@ -50,6 +48,18 @@ export const FileEditTool = registerTool({
     const { file_path, old_string, new_string, replace_all } = input;
 
     const targetPath = path.resolve(context.cwd, file_path);
+
+    // P1-5: 路径安全校验
+    const pathCheck = validatePath(targetPath, context.cwd);
+    if (!pathCheck.safe) {
+      return { output: `[BLOCKED] ${pathCheck.error}`, isError: true };
+    }
+
+    // P1-5: 新内容大小校验
+    const sizeCheck = validateWriteSize(new_string);
+    if (!sizeCheck.safe) {
+      return { output: `[BLOCKED] ${sizeCheck.error}`, isError: true };
+    }
 
     try {
       const content = await fs.readFile(targetPath, 'utf-8');
