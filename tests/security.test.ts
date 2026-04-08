@@ -3,7 +3,7 @@
  * 覆盖：路径遍历防护、危险命令黑名单、文件大小限制
  */
 import { describe, test, expect } from 'bun:test';
-import { validatePath, validateCommand, validateWriteSize } from '../src/security/pathGuard.ts';
+import { validatePath, validateCommand, validateWriteSize, validateSensitivePath } from '../src/security/pathGuard.ts';
 
 describe('validatePath — 路径遍历防护', () => {
   const cwd = '/Users/test/projects/myapp';
@@ -99,5 +99,48 @@ describe('validateWriteSize — 文件大小限制', () => {
     const result = validateWriteSize(content);
     expect(result.safe).toBe(false);
     expect(result.error).toContain('超过上限');
+  });
+});
+
+describe('validateSensitivePath — 敏感文件保护', () => {
+  test('允许普通文件路径', () => {
+    expect(validateSensitivePath('/Users/test/projects/src/main.ts').safe).toBe(true);
+    expect(validateSensitivePath('/tmp/output.log').safe).toBe(true);
+  });
+
+  test('拒绝修改 .zshrc', () => {
+    const result = validateSensitivePath('/Users/test/.zshrc');
+    expect(result.safe).toBe(false);
+    expect(result.reason).toContain('shell 配置');
+  });
+
+  test('拒绝修改 .bashrc', () => {
+    expect(validateSensitivePath('/Users/test/.bashrc').safe).toBe(false);
+  });
+
+  test('拒绝修改 .bash_profile', () => {
+    expect(validateSensitivePath('/Users/test/.bash_profile').safe).toBe(false);
+  });
+
+  test('拒绝修改 .gitconfig', () => {
+    expect(validateSensitivePath('/Users/test/.gitconfig').safe).toBe(false);
+  });
+
+  test('拒绝修改 SSH 配置和密钥', () => {
+    expect(validateSensitivePath('/Users/test/.ssh/id_rsa').safe).toBe(false);
+    expect(validateSensitivePath('/Users/test/.ssh/authorized_keys').safe).toBe(false);
+    expect(validateSensitivePath('/Users/test/.ssh/config').safe).toBe(false);
+  });
+
+  test('拒绝修改 .npmrc', () => {
+    expect(validateSensitivePath('/Users/test/.npmrc').safe).toBe(false);
+  });
+
+  test('拒绝修改 AWS 凭证', () => {
+    expect(validateSensitivePath('/Users/test/.aws/credentials').safe).toBe(false);
+  });
+
+  test('拒绝修改 .env.local', () => {
+    expect(validateSensitivePath('/Users/test/project/.env.local').safe).toBe(false);
   });
 });

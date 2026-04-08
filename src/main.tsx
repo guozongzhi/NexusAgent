@@ -28,15 +28,16 @@ import { parseAndRouteCommand } from './commands/router.ts';
 import { OpenAIAdapter } from './services/api/openai-adapter.ts';
 import type { Message, ToolUseContext } from './types/index.ts';
 import { renderMarkdown } from './utils/markdown.ts';
-import { buildSystemPrompt } from './context.ts';
+import { buildSystemPrompt, buildSystemPromptAsync } from './context.ts';
 import { getAllFunctionDefs } from './tools/index.ts';
 import type { SpinnerMode } from './components/Spinner.tsx';
 import { Onboarding, hasCompletedOnboarding, markOnboardingComplete } from './components/Onboarding.tsx';
 import { truncateMessages } from './services/history/tokenWindow.ts';
+import { autoCompactIfNeeded, createAutoCompactState, compactConversation } from './services/compact/index.ts';
 import { padToTermWidth } from './utils/path.ts';
 
 const NEXUS_VERSION = '0.1.0';
-export const READ_ONLY_TOOLS = ['file_read', 'list_dir', 'search', 'grep', 'glob'];
+export const READ_ONLY_TOOLS = ['file_read', 'list_dir', 'search', 'grep', 'glob', 'note'];
 
 // ─── 类型 ──────────────────────────────────────────────
 
@@ -136,6 +137,10 @@ function NexusApp({ oneShotQuery }: { oneShotQuery?: string }) {
   const engineRef = useRef<QueryEngine | null>(null);
   // 完整消息历史（传给 LLM）
   const historyRef = useRef<Message[]>([]);
+  // AutoCompact 状态
+  const autoCompactStateRef = useRef(createAutoCompactState());
+  // LLM 适配器引用（compact 需要直接调用）
+  const adapterRef = useRef<import('./services/api/openai-adapter.ts').OpenAIAdapter | null>(null);
 
   // 流式文本节流缓冲
   const streamBufferRef = useRef('');
@@ -159,6 +164,7 @@ function NexusApp({ oneShotQuery }: { oneShotQuery?: string }) {
       const baseURL = conf.baseUrl || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
 
       const adapter = new OpenAIAdapter(baseURL, apiKey);
+      adapterRef.current = adapter;
       engineRef.current = new QueryEngine(adapter);
 
       // 恢复历史会话
@@ -271,22 +277,50 @@ function NexusApp({ oneShotQuery }: { oneShotQuery?: string }) {
     try {
       if (!engineRef.current) throw new Error('Engine not initialized');
 
-      // P0-2: 使用 context.ts 的完整 System Prompt
-      const sysPrompt = buildSystemPrompt(cwd);
+      // P0-2: 使用 context.ts 的完整 System Prompt（含 NEXUS.md 项目指令）
+      const sysPrompt = await buildSystemPromptAsync(cwd);
       const conf = await loadConfig();
 
       // 构建 LLM 消息
       historyRef.current.push({ role: 'user', content: value });
 
-      // P1-4: Token 窗口截断，防止超出模型上下文限制
-      const trimmedMessages = truncateMessages([...historyRef.current]);
+      // P1-4: 智能上下文压缩（替代简单截断）
+      const actualModel = conf.model || process.env.OPENAI_MODEL || 'gpt-4o';
+      let workingMessages = [...historyRef.current];
+
+      // AutoCompact: MicroCompact + Full Compact 两层检测
+      if (adapterRef.current) {
+        const acResult = await autoCompactIfNeeded(
+          workingMessages,
+          autoCompactStateRef.current,
+          {
+            adapter: adapterRef.current,
+            model: actualModel,
+            systemPrompt: sysPrompt,
+            onProgress: (status) => {
+              setCompletedMessages(prev => [
+                ...prev,
+                { id: nextMsgId(), role: 'system', content: status },
+              ]);
+            },
+          },
+        );
+        workingMessages = acResult.messages;
+        // 如果发生了 Full Compact，同步更新 historyRef
+        if (acResult.compactionResult) {
+          historyRef.current = acResult.messages;
+        }
+      }
+
+      // Fallback: 最终安全截断
+      const trimmedMessages = truncateMessages(workingMessages);
 
       // P0-1: 通过 ESM import 获取工具定义（tools/index.ts 副作用注册已在顶层触发）
       const toolDefs = getAllFunctionDefs();
 
       const response = await engineRef.current.run({
         systemPrompt: sysPrompt,
-        model: conf.model || process.env.OPENAI_MODEL || 'gpt-4o',
+        model: actualModel,
         messages: trimmedMessages,
         toolDefs,
         toolContext: { cwd } as ToolUseContext,

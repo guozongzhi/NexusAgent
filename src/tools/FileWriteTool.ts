@@ -7,7 +7,7 @@ import { writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { registerTool } from '../Tool.ts';
 import type { ToolResult, ToolUseContext } from '../types/index.ts';
-import { validatePath, validateWriteSize } from '../security/pathGuard.ts';
+import { validatePath, validateWriteSize, validateSensitivePath } from '../security/pathGuard.ts';
 
 const inputSchema = z.object({
   filePath: z.string().describe('文件的绝对路径或相对于工作目录的路径'),
@@ -29,6 +29,12 @@ export const FileWriteTool = registerTool({
     const pathCheck = validatePath(absPath, context.cwd);
     if (!pathCheck.safe) {
       return { output: `[BLOCKED] ${pathCheck.error}`, isError: true };
+    }
+
+    // 敏感文件保护
+    const sensitiveCheck = validateSensitivePath(absPath);
+    if (!sensitiveCheck.safe) {
+      return { output: `[BLOCKED] ${sensitiveCheck.reason}`, isError: true };
     }
 
     // P1-5: 写入大小校验

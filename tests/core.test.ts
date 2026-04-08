@@ -8,9 +8,9 @@ import { shortenPath, formatTokens } from '../src/utils/path.ts';
 import { buildSystemPrompt } from '../src/context.ts';
 
 describe('工具注册表', () => {
-  test('所有 7 个工具应该被注册', () => {
+  test('所有 8 个工具应该被注册', () => {
     const tools = getAllTools();
-    expect(tools.length).toBe(7);
+    expect(tools.length).toBe(8);
   });
 
   test('工具查找正确', () => {
@@ -21,6 +21,7 @@ describe('工具注册表', () => {
     expect(getTool('glob')).toBeDefined();
     expect(getTool('grep')).toBeDefined();
     expect(getTool('list_dir')).toBeDefined();
+    expect(getTool('note')).toBeDefined();
   });
 
   test('查找不存在的工具返回 undefined', () => {
@@ -29,7 +30,7 @@ describe('工具注册表', () => {
 
   test('getAllFunctionDefs 返回正确的 OpenAI 格式', () => {
     const defs = getAllFunctionDefs();
-    expect(defs.length).toBe(7);
+    expect(defs.length).toBe(8);
 
     for (const def of defs) {
       expect(def.type).toBe('function');
@@ -44,8 +45,8 @@ describe('工具注册表', () => {
     const readOnlyTools = tools.filter(t => t.isReadOnly);
     const writeTools = tools.filter(t => !t.isReadOnly);
     
-    // file_read, glob, grep, list_dir 是只读
-    expect(readOnlyTools.length).toBe(4);
+    // file_read, glob, grep, list_dir, note 是只读
+    expect(readOnlyTools.length).toBe(5);
     // bash, file_write, file_edit 是写入
     expect(writeTools.length).toBe(3);
   });

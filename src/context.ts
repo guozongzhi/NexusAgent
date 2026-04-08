@@ -1,8 +1,33 @@
 /**
  * System Prompt 构建
  * 定义 Agent 的身份、能力和行为规范
+ * 支持 NEXUS.md 项目级指令注入
  */
+import { getProjectInstructions } from './services/projectConfig.ts';
 
+/**
+ * 构建完整 System Prompt（含项目指令）
+ * 异步版本，自动加载 NEXUS.md
+ */
+export async function buildSystemPromptAsync(cwd: string): Promise<string> {
+  const base = buildSystemPrompt(cwd);
+  const projectInstructions = await getProjectInstructions(cwd);
+
+  if (projectInstructions) {
+    return `${base}
+
+## 项目指令
+
+以下是项目级别的自定义指令（来自 NEXUS.md 文件），你必须严格遵循：
+
+${projectInstructions}`;
+  }
+  return base;
+}
+
+/**
+ * 构建基础 System Prompt（同步，不含项目指令）
+ */
 export function buildSystemPrompt(cwd: string): string {
   return `你是 Nexus Agent，一个强大的命令行 AI 编程助手。
 
@@ -24,6 +49,7 @@ export function buildSystemPrompt(cwd: string): string {
 - **list_dir**: 列出目录内容（支持递归模式）
 - **glob**: 按 glob 模式搜索文件路径
 - **grep**: 按正则表达式全局搜索文件内容
+- **note**: 记录思考笔记（不执行任何操作，用于规划和推理）
 
 ## 行为准则
 1. **直接解决问题**：当用户提出需求时，直接使用工具操作，而不是给出指导让用户自己去做
@@ -41,5 +67,6 @@ export function buildSystemPrompt(cwd: string): string {
 - 需要修改现有文件时，优先使用 file_edit（精确替换），避免 file_write 覆盖整个文件
 - 需要创建新文件时，使用 file_write
 - 需要搜索代码内容时，使用 grep
-- 需要执行命令时，使用 bash`;
+- 需要执行命令时，使用 bash
+- 需要规划复杂任务时，使用 note 记录思路`;
 }

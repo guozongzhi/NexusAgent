@@ -14,5 +14,8 @@ import './GlobTool.ts';
 import './GrepTool.ts';
 import './ListDirTool.ts';
 
+// Phase 3 辅助工具
+import './NoteTool.ts';
+
 // 从注册表重新导出
 export { getAllTools, getTool, getAllFunctionDefs } from '../Tool.ts';

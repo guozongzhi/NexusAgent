@@ -3,7 +3,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import { registerTool } from '../Tool.ts';
 import type { ToolResult } from '../types/index.ts';
-import { validatePath, validateWriteSize } from '../security/pathGuard.ts';
+import { validatePath, validateWriteSize, validateSensitivePath } from '../security/pathGuard.ts';
 
 /**
  * 标准化空显字符串，应对 LLM 换行符输出误差
@@ -53,6 +53,12 @@ export const FileEditTool = registerTool({
     const pathCheck = validatePath(targetPath, context.cwd);
     if (!pathCheck.safe) {
       return { output: `[BLOCKED] ${pathCheck.error}`, isError: true };
+    }
+
+    // 敏感文件保护
+    const sensitiveCheck = validateSensitivePath(targetPath);
+    if (!sensitiveCheck.safe) {
+      return { output: `[BLOCKED] ${sensitiveCheck.reason}`, isError: true };
     }
 
     // P1-5: 新内容大小校验

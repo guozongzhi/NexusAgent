@@ -9,14 +9,23 @@ import path from 'node:path';
 /**
  * 验证目标路径是否在允许的工作目录范围内
  * 防止路径遍历攻击（如 ../../etc/passwd）
+ *
+ * 安全措施：
+ * - Unicode NFC 规范化（防止 Unicode 标准化攻击）
+ * - 反斜杠转换（防止 Windows 风格路径注入）
+ * - 路径遍历检测
  */
 export function validatePath(targetPath: string, cwd: string): { safe: boolean; resolved: string; error?: string } {
-  const resolved = path.isAbsolute(targetPath)
-    ? path.resolve(targetPath)
-    : path.resolve(cwd, targetPath);
+  // Unicode NFC 规范化，防止 Unicode 标准化绕过
+  const normalizedTarget = targetPath.normalize('NFC').replace(/\\/g, '/');
+  const normalizedCwd = cwd.normalize('NFC');
+
+  const resolved = path.isAbsolute(normalizedTarget)
+    ? path.resolve(normalizedTarget)
+    : path.resolve(normalizedCwd, normalizedTarget);
 
   // 允许 cwd 本身及其子目录
-  if (!resolved.startsWith(cwd + path.sep) && resolved !== cwd) {
+  if (!resolved.startsWith(normalizedCwd + path.sep) && resolved !== normalizedCwd) {
     // 特例：允许 HOME 下的配置目录
     const home = process.env['HOME'] ?? '';
     if (home && resolved.startsWith(home + path.sep)) {
@@ -25,11 +34,39 @@ export function validatePath(targetPath: string, cwd: string): { safe: boolean; 
     return {
       safe: false,
       resolved,
-      error: `路径越界: ${resolved} 不在工作目录 ${cwd} 范围内`,
+      error: `路径越界: ${resolved} 不在工作目录 ${normalizedCwd} 范围内`,
     };
   }
 
   return { safe: true, resolved };
+}
+
+// ─── 敏感文件保护 ──────────────────────────────────────
+
+/** 写入操作中禁止修改的敏感文件模式 */
+const SENSITIVE_FILE_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
+  { pattern: /\/(\.zshrc|\.bashrc|\.bash_profile|\.profile)$/, reason: '禁止修改 shell 配置文件' },
+  { pattern: /\/\.gitconfig$/, reason: '禁止修改 git 全局配置' },
+  { pattern: /\/\.ssh\//, reason: '禁止修改 SSH 配置和密钥' },
+  { pattern: /\/\.gnupg\//, reason: '禁止修改 GPG 配置和密钥' },
+  { pattern: /\/\.npmrc$/, reason: '禁止修改 npm 配置（可能含 token）' },
+  { pattern: /\/\.env\.local$/, reason: '禁止修改本地环境变量文件' },
+  { pattern: /\/\.aws\/credentials$/, reason: '禁止修改 AWS 凭证' },
+  { pattern: /\/\.kube\/config$/, reason: '禁止修改 Kubernetes 配置' },
+];
+
+/**
+ * 验证是否为写入操作的敏感路径
+ * 仅在写入/编辑操作中检查，读取不受限制
+ */
+export function validateSensitivePath(targetPath: string): { safe: boolean; reason?: string } {
+  const normalized = targetPath.normalize('NFC');
+  for (const { pattern, reason } of SENSITIVE_FILE_PATTERNS) {
+    if (pattern.test(normalized)) {
+      return { safe: false, reason };
+    }
+  }
+  return { safe: true };
 }
 
 // ─── 命令黑名单 ──────────────────────────────────────────
