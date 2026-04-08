@@ -98,7 +98,7 @@ export function ToolDot({ isResolved, isError, shouldAnimate }: ToolDotProps): R
     return () => clearInterval(timer);
   }, [shouldAnimate, isResolved, isError]);
 
-  const color = isError ? 'red' : isResolved ? 'green' : undefined;
+  const color = isError ? 'red' : isResolved ? 'white' : undefined;
   const dimColor = !isResolved && !isError;
 
   return (
@@ -124,11 +124,11 @@ function getVerbForMode(mode: SpinnerMode, fallback: string): string {
 function getColorForMode(mode: SpinnerMode, elapsedMs: number): string {
   if (mode === 'thinking' && elapsedMs > 10000) return 'red';
   switch (mode) {
-    case 'thinking': return 'cyan';
-    case 'tool': return 'yellow';
-    case 'streaming': return 'green';
-    case 'waiting': return 'magenta';
-    default: return 'cyan';
+    case 'thinking': return 'white';
+    case 'tool': return 'white';
+    case 'streaming': return 'gray';
+    case 'waiting': return 'gray';
+    default: return 'white';
   }
 }
 

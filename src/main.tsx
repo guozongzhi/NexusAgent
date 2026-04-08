@@ -33,6 +33,7 @@ import { getAllFunctionDefs } from './tools/index.ts';
 import type { SpinnerMode } from './components/Spinner.tsx';
 import { Onboarding, hasCompletedOnboarding, markOnboardingComplete } from './components/Onboarding.tsx';
 import { truncateMessages } from './services/history/tokenWindow.ts';
+import { padToTermWidth } from './utils/path.ts';
 
 const NEXUS_VERSION = '0.1.0';
 export const READ_ONLY_TOOLS = ['file_read', 'list_dir', 'search', 'grep', 'glob'];
@@ -70,11 +71,11 @@ function nextMsgId(): number {
 
 function StaticMessageBlock({ item }: { item: CompletedMessage }) {
   if (item.role === 'user') {
-    // Claude Code 风格：黄色左侧竖条 + 文本
+    // 全宽淡灰色背景条 + 白色文字
+    const padded = padToTermWidth(' ' + item.content);
     return (
       <Box marginTop={1}>
-        <Text color="yellow">{'▎'}</Text>
-        <Text> {item.content}</Text>
+        <Text backgroundColor="blackBright" color="white">{padded}</Text>
       </Box>
     );
   }
@@ -129,6 +130,8 @@ function NexusApp({ oneShotQuery }: { oneShotQuery?: string }) {
   const [showOnboarding, setShowOnboarding] = useState(() => !hasCompletedOnboarding());
   const [apiReady, setApiReady] = useState(false);
   const [apiError, setApiError] = useState<string | undefined>();
+  // Always Allow：本会话中已授权自动执行的工具集合
+  const autoApprovedToolsRef = useRef<Set<string>>(new Set());
 
   const engineRef = useRef<QueryEngine | null>(null);
   // 完整消息历史（传给 LLM）
@@ -222,16 +225,22 @@ function NexusApp({ oneShotQuery }: { oneShotQuery?: string }) {
           const newBase = newConf.baseUrl || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
           const newAdapter = new OpenAIAdapter(newBase, newKey);
           engineRef.current = new QueryEngine(newAdapter);
+          const actualModel = newConf.model || process.env.OPENAI_MODEL || 'gpt-4o';
+          setModelName(actualModel);
 
           setCompletedMessages(prev => [
             ...prev,
             {
               id: nextMsgId(),
               role: 'system',
-              content: `配置已热重载！\n当前 BaseURL: ${newBase}\n当前模型: ${newConf.model || '未指定'}`,
+              content: `配置已热重载！\n当前 BaseURL: ${newBase}\n当前模型: ${actualModel}`,
             },
           ]);
         },
+        getHistory: () => historyRef.current,
+        setHistory: (msgs) => { historyRef.current = msgs; },
+        getTokenCount: () => tokenCount,
+        getModel: () => modelName,
       });
 
       setCompletedMessages(prev => [
@@ -310,6 +319,10 @@ function NexusApp({ oneShotQuery }: { oneShotQuery?: string }) {
         },
         onToolApprovalRequest: async (toolName: string, args: any) => {
           if (READ_ONLY_TOOLS.includes(toolName)) {
+            return true;
+          }
+          // Always Allow 检查
+          if (autoApprovedToolsRef.current.has(toolName)) {
             return true;
           }
           return new Promise<boolean>((resolve, reject) => {
@@ -414,12 +427,17 @@ function NexusApp({ oneShotQuery }: { oneShotQuery?: string }) {
             pendingApproval.resolve(false);
             setPendingApproval(null);
           }}
+          onAlwaysAllow={() => {
+            autoApprovedToolsRef.current.add(pendingApproval.toolName);
+            pendingApproval.resolve(true);
+            setPendingApproval(null);
+          }}
         />
       ) : (
         <Box flexDirection="column">
           {!isProcessing && (
             <Box>
-              <Text dimColor bold>{'> '}</Text>
+              <Text bold color="white">{'> '}</Text>
               <TextInput
                 value={inputValue}
                 onChange={setInputValue}

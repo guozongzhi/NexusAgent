@@ -1,7 +1,7 @@
 /**
- * StatusBar — Claude Code 风格底部状态栏
- *
- * 布局：左侧 "? for shortcuts"，右侧模型/token/状态信息
+ * StatusBar — 底部状态栏
+ * 布局：左侧 "? for shortcuts"，右侧模型名 + token
+ * 颜色：白色/灰色系
  */
 import React from 'react';
 import { Box, Text } from 'ink';
@@ -14,26 +14,24 @@ interface StatusBarProps {
   isProcessing?: boolean;
 }
 
-export function StatusBar({ model, cwd, tokenCount, isProcessing }: StatusBarProps): React.ReactNode {
-  // 右侧信息片段
-  const infoParts: string[] = [];
+export function StatusBar({ model, tokenCount, isProcessing }: StatusBarProps): React.ReactNode {
+  const rightParts: string[] = [];
   if (tokenCount && tokenCount > 0) {
-    infoParts.push(`${formatTokens(tokenCount)} tokens`);
+    rightParts.push(`${formatTokens(tokenCount)} tokens`);
   }
+  rightParts.push(model);
 
   return (
-    <Box width="100%" justifyContent="space-between" paddingX={1}>
+    <Box width="100%" justifyContent="space-between">
       {/* 左侧：快捷键提示 */}
       <Text dimColor>? for shortcuts</Text>
 
-      {/* 右侧：模型 + token + 处理状态 */}
+      {/* 右侧 */}
       <Box gap={1}>
         {isProcessing && (
-          <Text color="cyan">●</Text>
+          <Text color="white">●</Text>
         )}
-        {infoParts.length > 0 && (
-          <Text dimColor>{infoParts.join(' · ')}</Text>
-        )}
+        <Text dimColor>{rightParts.join(' · ')}</Text>
       </Box>
     </Box>
   );

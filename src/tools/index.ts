@@ -12,6 +12,7 @@ import './FileWriteTool.ts';
 import './FileEditTool.ts';
 import './GlobTool.ts';
 import './GrepTool.ts';
+import './ListDirTool.ts';
 
 // 从注册表重新导出
 export { getAllTools, getTool, getAllFunctionDefs } from '../Tool.ts';
