@@ -4,6 +4,26 @@
  * 支持 NEXUS.md 项目级指令注入
  */
 import { getProjectInstructions } from './services/projectConfig.ts';
+import os from 'node:os';
+
+/** 运行时检测操作系统 */
+function detectOS(): string {
+  const platform = os.platform();
+  switch (platform) {
+    case 'darwin': return 'macOS';
+    case 'linux': return 'Linux';
+    case 'win32': return 'Windows';
+    default: return platform;
+  }
+}
+
+/** 运行时检测 Shell */
+function detectShell(): string {
+  if (os.platform() === 'win32') return 'PowerShell';
+  const shell = process.env['SHELL'] ?? '';
+  const base = shell.split('/').pop() ?? 'unknown';
+  return base || 'unknown';
+}
 
 /**
  * 构建完整 System Prompt（含项目指令）
@@ -37,9 +57,9 @@ export function buildSystemPrompt(cwd: string): string {
 - 你应该直接使用工具解决问题，而不是仅仅给出建议
 
 ## 当前环境
-- 操作系统: macOS
+- 操作系统: ${detectOS()}
 - 工作目录: ${cwd}
-- Shell: zsh
+- Shell: ${detectShell()}
 
 ## 可用工具
 - **bash**: 执行 Shell 命令（安装依赖、运行脚本、查看进程等）
