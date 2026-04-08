@@ -1,177 +1,301 @@
 #!/usr/bin/env bash
 
-# Nexus Agent — 跨平台安装脚本（macOS / Linux）
-# 自动检测 Shell 类型、安装 Bun、挂载全局命令
+# Nexus Agent — 一键安装脚本（macOS / Linux / WSL）
+#
+# 用法：
+#   curl -fsSL https://raw.githubusercontent.com/guozongzhi/NexusAgent/main/install.sh | bash
+#   curl -fsSL ... | bash -s <version>    # 安装指定版本/分支
+#
+# 安装位置：
+#   二进制：    ~/.local/bin/nexus
+#   应用数据：  ~/.local/share/nexus/
+#   用户配置：  ~/.nexus/
 
-set -e
+set -euo pipefail
+
+# ─── 配置 ─────────────────────────────────────────────────
+NEXUS_REPO="https://github.com/guozongzhi/NexusAgent.git"
+NEXUS_SHARE_DIR="$HOME/.local/share/nexus"
+NEXUS_BIN_DIR="$HOME/.local/bin"
+NEXUS_BIN="$NEXUS_BIN_DIR/nexus"
+NEXUS_VERSION="${1:-main}"   # 支持 bash -s <version>
 
 # ─── 颜色 ─────────────────────────────────────────────────
-C_RESET="\033[0m"
-C_INFO="\033[1;36m"
-C_OK="\033[1;32m"
-C_ERR="\033[1;31m"
-C_WARN="\033[1;33m"
-
-info()  { echo -e "${C_INFO}► $1${C_RESET}"; }
-ok()    { echo -e "${C_OK}✔ $1${C_RESET}"; }
-warn()  { echo -e "${C_WARN}⚠ $1${C_RESET}"; }
-err()   { echo -e "${C_ERR}✖ $1${C_RESET}"; }
-
-# ─── 1. 操作系统检测 ──────────────────────────────────────
-info "检测运行环境..."
-
-OS="$(uname -s)"
-ARCH="$(uname -m)"
-
-case "$OS" in
-  Darwin)  PLATFORM="macOS" ;;
-  Linux)   PLATFORM="Linux" ;;
-  MINGW*|MSYS*|CYGWIN*)
-    err "检测到 Windows 环境，请使用 install.ps1 进行安装。"
-    echo "  >> PowerShell 中执行: .\\install.ps1"
-    exit 1
-    ;;
-  *)
-    err "不支持的操作系统: $OS"
-    exit 1
-    ;;
-esac
-
-ok "系统: $PLATFORM ($ARCH)"
-
-# ─── 2. Shell 类型检测 ────────────────────────────────────
-CURRENT_SHELL="$(basename "$SHELL" 2>/dev/null || echo "unknown")"
-
-# 确定 RC 文件
-case "$CURRENT_SHELL" in
-  zsh)   RC_FILE="$HOME/.zshrc" ;;
-  bash)  
-    # macOS 用 .bash_profile, Linux 用 .bashrc
-    if [ "$PLATFORM" = "macOS" ]; then
-      RC_FILE="$HOME/.bash_profile"
-    else
-      RC_FILE="$HOME/.bashrc"
-    fi
-    ;;
-  fish)  RC_FILE="$HOME/.config/fish/config.fish" ;;
-  *)     RC_FILE="$HOME/.profile" ;;
-esac
-
-ok "Shell: $CURRENT_SHELL → RC 文件: $RC_FILE"
-
-# ─── 3. Bun 运行时检测与安装 ──────────────────────────────
-info "检测 Bun 运行时..."
-
-if ! command -v bun &> /dev/null; then
-  # 尝试常见安装路径
-  if [ -f "$HOME/.bun/bin/bun" ]; then
-    export PATH="$HOME/.bun/bin:$PATH"
-    ok "在 ~/.bun/bin 找到 Bun"
-  else
-    warn "未检测到 Bun，正在自动安装..."
-    curl -fsSL https://bun.sh/install | bash
-    export PATH="$HOME/.bun/bin:$PATH"
-    
-    if ! command -v bun &> /dev/null; then
-      err "Bun 安装失败。请手动安装后重试: https://bun.sh"
-      exit 1
-    fi
-    ok "Bun 安装成功"
-  fi
+if [ -t 1 ]; then
+  C_RESET="\033[0m"
+  C_BOLD="\033[1m"
+  C_DIM="\033[2m"
+  C_GREEN="\033[32m"
+  C_YELLOW="\033[33m"
+  C_RED="\033[31m"
+  C_CYAN="\033[36m"
 else
-  ok "Bun $(bun --version) 已就绪"
+  C_RESET="" C_BOLD="" C_DIM="" C_GREEN="" C_YELLOW="" C_RED="" C_CYAN=""
 fi
 
-# ─── 4. 依赖安装 ──────────────────────────────────────────
-info "安装项目依赖..."
+info()  { echo -e "${C_CYAN}${C_BOLD}▸${C_RESET} $1"; }
+ok()    { echo -e "${C_GREEN}${C_BOLD}✓${C_RESET} $1"; }
+warn()  { echo -e "${C_YELLOW}${C_BOLD}!${C_RESET} $1"; }
+fail()  { echo -e "${C_RED}${C_BOLD}✗${C_RESET} $1"; exit 1; }
 
-if bun install --frozen-lockfile 2>/dev/null; then
-  ok "依赖安装完成"
-else
-  warn "frozen-lockfile 失败，尝试普通安装..."
-  bun install
-  ok "依赖安装完成（非锁定模式）"
-fi
+# ─── 1. 平台检测 ──────────────────────────────────────────
+detect_platform() {
+  local os arch
+  os="$(uname -s)"
+  arch="$(uname -m)"
 
-# ─── 5. 全局命令挂载 ──────────────────────────────────────
-info "挂载全局命令 [nexus]..."
+  case "$os" in
+    Darwin)        PLATFORM="macOS" ;;
+    Linux)         PLATFORM="Linux" ;;
+    MINGW*|MSYS*)  fail "检测到 Windows 环境。请使用 PowerShell 安装：irm https://raw.githubusercontent.com/guozongzhi/NexusAgent/main/install.ps1 | iex" ;;
+    *)             fail "不支持的操作系统: $os" ;;
+  esac
 
-chmod +x ./src/main.tsx
+  case "$arch" in
+    x86_64|amd64)  ARCH="x64" ;;
+    aarch64|arm64) ARCH="arm64" ;;
+    *)             ARCH="$arch" ;;
+  esac
+}
 
-BUN_BIN_DIR="$HOME/.bun/bin"
-mkdir -p "$BUN_BIN_DIR"
-
-# 清理旧链接
-if [ -L "$BUN_BIN_DIR/nexus" ] || [ -f "$BUN_BIN_DIR/nexus" ]; then
-  rm "$BUN_BIN_DIR/nexus"
-fi
-
-NEXUS_DIR="$(cd "$(dirname "$0")" && pwd)"
-cat <<EOF > "$BUN_BIN_DIR/nexus"
-#!/usr/bin/env bash
-# Nexus Agent 启动器（由安装脚本生成）
-exec bun run "$NEXUS_DIR/src/main.tsx" "\$@"
-EOF
-
-chmod +x "$BUN_BIN_DIR/nexus"
-ok "全局命令 nexus 已挂载到 $BUN_BIN_DIR/nexus"
-
-# ─── 6. PATH 环境变量注入 ─────────────────────────────────
-if [ -f "$RC_FILE" ]; then
-  if ! grep -q ".bun/bin" "$RC_FILE" 2>/dev/null; then
-    info "正在将 Bun 路径注入 $RC_FILE..."
-
-    case "$CURRENT_SHELL" in
-      fish)
-        echo 'set -gx PATH $HOME/.bun/bin $PATH' >> "$RC_FILE"
-        ;;
-      *)
-        echo '' >> "$RC_FILE"
-        echo '# Nexus Agent — Bun 运行时路径' >> "$RC_FILE"
-        echo 'export PATH="$HOME/.bun/bin:$PATH"' >> "$RC_FILE"
-        ;;
-    esac
-    ok "PATH 已注入 $RC_FILE"
-  fi
-else
-  # RC 文件不存在，创建并写入
+# ─── 2. Shell 检测 ────────────────────────────────────────
+detect_shell() {
+  CURRENT_SHELL="$(basename "${SHELL:-/bin/bash}")"
   case "$CURRENT_SHELL" in
+    zsh)
+      RC_FILE="$HOME/.zshrc"
+      ;;
+    bash)
+      if [ "$PLATFORM" = "macOS" ]; then
+        RC_FILE="$HOME/.bash_profile"
+      else
+        RC_FILE="$HOME/.bashrc"
+      fi
+      ;;
     fish)
-      mkdir -p "$(dirname "$RC_FILE")"
-      echo 'set -gx PATH $HOME/.bun/bin $PATH' > "$RC_FILE"
+      RC_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/fish/config.fish"
       ;;
     *)
-      echo 'export PATH="$HOME/.bun/bin:$PATH"' > "$RC_FILE"
+      RC_FILE="$HOME/.profile"
       ;;
   esac
-  ok "已创建 $RC_FILE 并注入 PATH"
+}
+
+# ─── 3. 依赖检查 ──────────────────────────────────────────
+check_dependencies() {
+  # Git 必须存在
+  if ! command -v git &>/dev/null; then
+    fail "需要 Git。请先安装：\n  macOS: xcode-select --install\n  Linux: sudo apt install git"
+  fi
+
+  # Bun：检查或自动安装
+  if ! command -v bun &>/dev/null; then
+    if [ -f "$HOME/.bun/bin/bun" ]; then
+      export PATH="$HOME/.bun/bin:$PATH"
+    else
+      info "安装 Bun 运行时..."
+      curl -fsSL https://bun.sh/install | bash 2>/dev/null
+      export PATH="$HOME/.bun/bin:$PATH"
+      if ! command -v bun &>/dev/null; then
+        fail "Bun 安装失败。请手动安装：https://bun.sh"
+      fi
+    fi
+  fi
+}
+
+# ─── 4. 下载/更新应用 ─────────────────────────────────────
+install_app() {
+  mkdir -p "$NEXUS_SHARE_DIR"
+  mkdir -p "$NEXUS_BIN_DIR"
+
+  if [ -d "$NEXUS_SHARE_DIR/.git" ]; then
+    # 已存在 → 更新
+    info "更新 Nexus Agent..."
+    (cd "$NEXUS_SHARE_DIR" && git fetch --quiet origin && git checkout --quiet "$NEXUS_VERSION" && git pull --quiet origin "$NEXUS_VERSION" 2>/dev/null || true)
+  else
+    # 首次安装 → 克隆
+    info "下载 Nexus Agent ($NEXUS_VERSION)..."
+    rm -rf "$NEXUS_SHARE_DIR"
+    git clone --quiet --depth 1 --branch "$NEXUS_VERSION" "$NEXUS_REPO" "$NEXUS_SHARE_DIR" 2>/dev/null || \
+    git clone --quiet --depth 1 "$NEXUS_REPO" "$NEXUS_SHARE_DIR"
+  fi
+}
+
+# ─── 5. 安装依赖 ──────────────────────────────────────────
+install_dependencies() {
+  info "安装项目依赖..."
+  (cd "$NEXUS_SHARE_DIR" && bun install --frozen-lockfile 2>/dev/null || bun install) >/dev/null
+}
+
+# ─── 6. 创建启动器 ────────────────────────────────────────
+create_launcher() {
+  # 移除旧启动器
+  rm -f "$NEXUS_BIN" "$HOME/.bun/bin/nexus"
+
+  cat > "$NEXUS_BIN" <<'LAUNCHER'
+#!/usr/bin/env bash
+# Nexus Agent 启动器（由安装脚本生成）
+set -e
+
+NEXUS_DIR="$HOME/.local/share/nexus"
+
+# 确保 Bun 在 PATH 中
+if ! command -v bun &>/dev/null; then
+  if [ -f "$HOME/.bun/bin/bun" ]; then
+    export PATH="$HOME/.bun/bin:$PATH"
+  else
+    echo "错误: 未找到 Bun 运行时。请运行: curl -fsSL https://bun.sh/install | bash" >&2
+    exit 1
+  fi
 fi
 
-export PATH="$HOME/.bun/bin:$PATH"
+# 内置命令
+case "${1:-}" in
+  --version|-v)
+    cd "$NEXUS_DIR" && grep '"version"' package.json | head -1 | sed 's/.*: *"\(.*\)".*/Nexus Agent v\1/'
+    exit 0
+    ;;
+  update)
+    echo "▸ 更新 Nexus Agent..."
+    cd "$NEXUS_DIR" && git pull --quiet origin main && bun install --frozen-lockfile 2>/dev/null || bun install
+    echo "✓ 更新完成"
+    exit 0
+    ;;
+  doctor)
+    echo "Nexus Agent 环境诊断"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "安装目录:  $NEXUS_DIR"
+    echo "启动器:    $(realpath "$0" 2>/dev/null || echo "$0")"
+    echo "Bun:       $(bun --version 2>/dev/null || echo '未找到')"
+    echo "Git:       $(git --version 2>/dev/null || echo '未找到')"
+    echo "Node.js:   $(node --version 2>/dev/null || echo '未安装')"
+    echo "Shell:     $SHELL"
+    echo "OS:        $(uname -s) $(uname -m)"
 
-# ─── 7. API Key 检测 ──────────────────────────────────────
-echo ""
-if [[ -z "$NEXUS_API_KEY" && -z "$OPENAI_API_KEY" ]]; then
-  warn "未检测到 API Key 环境变量"
-  echo "  启动前请执行:"
-  echo "    export OPENAI_API_KEY=\"你的密钥\""
-  echo "  或启动后使用: /config apiKey <密钥>"
-else
-  ok "API Key 环境变量已配置"
-fi
+    # 检查版本
+    if [ -d "$NEXUS_DIR/.git" ]; then
+      cd "$NEXUS_DIR"
+      echo "版本:      $(grep '"version"' package.json | head -1 | sed 's/.*: *"\(.*\)".*/\1/')"
+      echo "分支:      $(git branch --show-current 2>/dev/null || echo 'detached')"
+      echo "最新提交:  $(git log -1 --format='%h %s' 2>/dev/null || echo '未知')"
+    fi
 
-# ─── 8. 完成 ──────────────────────────────────────────────
-echo ""
-echo "============================================="
-echo -e "${C_OK}★ Nexus Agent 安装完成！${C_RESET}"
-echo ""
-echo "  使环境立即生效:"
-case "$CURRENT_SHELL" in
-  fish) echo -e "    ${C_INFO}source $RC_FILE${C_RESET}" ;;
-  *)    echo -e "    ${C_INFO}source $RC_FILE${C_RESET}" ;;
+    # 检查 API Key
+    if [ -n "${OPENAI_API_KEY:-}" ] || [ -n "${NEXUS_API_KEY:-}" ]; then
+      echo "API Key:   ✓ 已配置"
+    else
+      echo "API Key:   ✗ 未配置"
+    fi
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    exit 0
+    ;;
 esac
-echo ""
-echo "  启动 Nexus Agent:"
-echo -e "    ${C_INFO}nexus${C_RESET}"
-echo ""
-echo "============================================="
+
+exec bun run "$NEXUS_DIR/src/main.tsx" "$@"
+LAUNCHER
+
+  chmod +x "$NEXUS_BIN"
+}
+
+# ─── 7. PATH 配置 ─────────────────────────────────────────
+ensure_path() {
+  # 检查 ~/.local/bin 是否在 PATH 中
+  case ":$PATH:" in
+    *":$NEXUS_BIN_DIR:"*) return ;;
+  esac
+
+  # 需要注入 PATH
+  local path_line
+  case "$CURRENT_SHELL" in
+    fish)
+      path_line="fish_add_path $NEXUS_BIN_DIR"
+      ;;
+    *)
+      path_line='export PATH="$HOME/.local/bin:$PATH"'
+      ;;
+  esac
+
+  if [ -f "$RC_FILE" ]; then
+    if ! grep -q ".local/bin" "$RC_FILE" 2>/dev/null; then
+      echo "" >> "$RC_FILE"
+      echo "# Nexus Agent" >> "$RC_FILE"
+      echo "$path_line" >> "$RC_FILE"
+    fi
+  else
+    mkdir -p "$(dirname "$RC_FILE")"
+    echo "$path_line" > "$RC_FILE"
+  fi
+
+  export PATH="$NEXUS_BIN_DIR:$PATH"
+}
+
+# ─── 8. Bun PATH 配置 ────────────────────────────────────
+ensure_bun_path() {
+  if [ -d "$HOME/.bun/bin" ]; then
+    case "$CURRENT_SHELL" in
+      fish)
+        local bun_line="fish_add_path $HOME/.bun/bin"
+        ;;
+      *)
+        local bun_line='export PATH="$HOME/.bun/bin:$PATH"'
+        ;;
+    esac
+
+    if [ -f "$RC_FILE" ] && ! grep -q ".bun/bin" "$RC_FILE" 2>/dev/null; then
+      echo "$bun_line" >> "$RC_FILE"
+    fi
+  fi
+}
+
+# ─── 主流程 ───────────────────────────────────────────────
+main() {
+  echo ""
+  echo -e "${C_BOLD}Nexus Agent 安装程序${C_RESET}"
+  echo -e "${C_DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RESET}"
+  echo ""
+
+  detect_platform
+  ok "平台: $PLATFORM ($ARCH)"
+
+  detect_shell
+  ok "Shell: $CURRENT_SHELL → $RC_FILE"
+
+  check_dependencies
+  ok "Bun $(bun --version) 已就绪"
+
+  install_app
+  ok "源码已下载到 $NEXUS_SHARE_DIR"
+
+  install_dependencies
+  ok "依赖安装完成"
+
+  create_launcher
+  ok "启动器: $NEXUS_BIN"
+
+  ensure_path
+  ensure_bun_path
+  ok "PATH 已配置"
+
+  # API Key 提示
+  echo ""
+  if [ -z "${OPENAI_API_KEY:-}" ] && [ -z "${NEXUS_API_KEY:-}" ]; then
+    warn "API Key 未配置。启动前请执行:"
+    echo -e "  ${C_DIM}export OPENAI_API_KEY=\"你的密钥\"${C_RESET}"
+  else
+    ok "API Key 已配置"
+  fi
+
+  echo ""
+  echo -e "${C_DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RESET}"
+  echo -e "${C_GREEN}${C_BOLD}安装完成！${C_RESET}"
+  echo ""
+  echo -e "  使环境生效:  ${C_CYAN}source $RC_FILE${C_RESET}"
+  echo -e "  启动:        ${C_CYAN}nexus${C_RESET}"
+  echo -e "  更新:        ${C_CYAN}nexus update${C_RESET}"
+  echo -e "  诊断:        ${C_CYAN}nexus doctor${C_RESET}"
+  echo -e "  版本:        ${C_CYAN}nexus --version${C_RESET}"
+  echo -e "  卸载:        ${C_CYAN}rm -f ~/.local/bin/nexus && rm -rf ~/.local/share/nexus${C_RESET}"
+  echo ""
+}
+
+main "$@"
