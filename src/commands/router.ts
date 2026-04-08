@@ -61,6 +61,8 @@ export async function parseAndRouteCommand(query: string, actions: CommandAction
   **/status**   — 显示当前连接状态、模型、token 用量
   **/history**  — 查看当前会话的消息数和 token 估算
   **/compact**  — 压缩上下文窗口（截断旧消息）
+  **/bug**      — 报告 Bug（生成环境诊断信息）
+  **/version**  — 显示版本号
   **/exit**     — 安全退出应用
 `
       };
@@ -149,6 +151,32 @@ export async function parseAndRouteCommand(query: string, actions: CommandAction
         handled: true,
         output: `上下文已压缩: ${before} → ${after} 条消息`,
       };
+    }
+
+    case '/bug': {
+      const os = await import('node:os');
+      const cwd = process.cwd();
+      const model = actions.getModel();
+      const history = actions.getHistory();
+      const info = [
+        `环境诊断信息`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `OS:        ${os.platform()} ${os.arch()} ${os.release()}`,
+        `Shell:     ${process.env['SHELL'] ?? 'unknown'}`,
+        `Bun:       ${process.versions.bun ?? 'unknown'}`,
+        `工作目录:  ${cwd}`,
+        `模型:      ${model}`,
+        `会话消息:  ${history.length}`,
+        `Token:     ${actions.getTokenCount()}`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `请将以上信息连同 Bug 描述提交到:`,
+        `https://github.com/guozongzhi/NexusAgent/issues/new`,
+      ];
+      return { handled: true, output: info.join('\n') };
+    }
+
+    case '/version': {
+      return { handled: true, output: 'Nexus Agent v0.1.0' };
     }
 
     default:
