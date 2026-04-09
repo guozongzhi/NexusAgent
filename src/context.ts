@@ -4,6 +4,7 @@
  * 支持 NEXUS.md 项目级指令注入
  */
 import { getProjectInstructions } from './services/projectConfig.ts';
+import { plannerState } from './services/agent/planner.ts';
 import os from 'node:os';
 
 /** 运行时检测操作系统 */
@@ -88,5 +89,8 @@ export function buildSystemPrompt(cwd: string): string {
 - 需要创建新文件时，使用 file_write
 - 需要搜索代码内容时，使用 grep
 - 需要执行命令时，使用 bash
-- 需要规划复杂任务时，使用 note 记录思路`;
+- 需要执行命令时，使用 bash
+- 需要规划复杂任务时，使用 task_manage 和 note 记录思路
+
+${plannerState.getPlannerContext()}`;
 }

@@ -29,12 +29,13 @@ import { OpenAIAdapter } from './services/api/openai-adapter.ts';
 import type { Message, ToolUseContext } from './types/index.ts';
 import { renderMarkdown } from './utils/markdown.ts';
 import { buildSystemPrompt, buildSystemPromptAsync } from './context.ts';
-import { getAllFunctionDefs } from './tools/index.ts';
+import { getAllFunctionDefs, getTool } from './tools/index.ts';
 import type { SpinnerMode } from './components/Spinner.tsx';
 import { Onboarding, hasCompletedOnboarding, markOnboardingComplete } from './components/Onboarding.tsx';
 import { truncateMessages } from './services/history/tokenWindow.ts';
 import { autoCompactIfNeeded, createAutoCompactState, compactConversation } from './services/compact/index.ts';
 import { padToTermWidth } from './utils/path.ts';
+import { isToolAutoApproved, addAutoApprovedTool } from './security/permissionStore.ts';
 
 const NEXUS_VERSION = '0.1.0';
 export const READ_ONLY_TOOLS = ['file_read', 'list_dir', 'search', 'grep', 'glob', 'note'];
@@ -131,8 +132,7 @@ function NexusApp({ oneShotQuery }: { oneShotQuery?: string }) {
   const [showOnboarding, setShowOnboarding] = useState(() => !hasCompletedOnboarding());
   const [apiReady, setApiReady] = useState(false);
   const [apiError, setApiError] = useState<string | undefined>();
-  // Always Allow：本会话中已授权自动执行的工具集合
-  const autoApprovedToolsRef = useRef<Set<string>>(new Set());
+  // 移除 autoApprovedToolsRef，使用持久化存储
 
   const engineRef = useRef<QueryEngine | null>(null);
   // 完整消息历史（传给 LLM）
@@ -352,12 +352,19 @@ function NexusApp({ oneShotQuery }: { oneShotQuery?: string }) {
           );
         },
         onToolApprovalRequest: async (toolName: string, args: any) => {
-          if (READ_ONLY_TOOLS.includes(toolName)) {
+          const toolInstance = getTool(toolName);
+          const rawAuth = toolInstance?.authType || (toolInstance?.isReadOnly ? 'safe' : 'requires_confirm');
+          // 容错处理
+          const authType = READ_ONLY_TOOLS.includes(toolName) ? 'safe' : rawAuth;
+          
+          if (authType === 'safe') {
             return true;
           }
-          // Always Allow 检查
-          if (autoApprovedToolsRef.current.has(toolName)) {
-            return true;
+          if (authType !== 'dangerous') {
+            const isApproved = await isToolAutoApproved(toolName, cwd);
+            if (isApproved) {
+              return true;
+            }
           }
           return new Promise<boolean>((resolve, reject) => {
             setPendingApproval({ toolName, argsSummary: JSON.stringify(args), resolve, reject });
@@ -462,7 +469,8 @@ function NexusApp({ oneShotQuery }: { oneShotQuery?: string }) {
             setPendingApproval(null);
           }}
           onAlwaysAllow={() => {
-            autoApprovedToolsRef.current.add(pendingApproval.toolName);
+            // 异步更新持久化缓存，且默认通过项目级权限
+            void addAutoApprovedTool(pendingApproval.toolName, cwd, 'project');
             pendingApproval.resolve(true);
             setPendingApproval(null);
           }}

@@ -43,8 +43,10 @@ export interface QueryEngineParams {
   onToolEnd?: (name: string, result: string, isError: boolean) => void;
 }
 
-/** 单次循环最大迭代次数（防止无限循环） */
-const MAX_ITERATIONS = 20;
+/** 单次循环最大迭代次数（全自动模式下可能非常长） */
+const MAX_ITERATIONS = 100;
+/** 连续工具调用失败的断路器 */
+const MAX_CONSECUTIVE_ERRORS = 3;
 
 export class QueryEngine {
   private adapter: LLMAdapter;
@@ -63,6 +65,7 @@ export class QueryEngine {
     let iterations = 0;
     let totalPromptTokens = 0;
     let totalCompletionTokens = 0;
+    let consecutiveErrors = 0;
 
     while (iterations < MAX_ITERATIONS) {
       iterations++;
@@ -112,6 +115,14 @@ export class QueryEngine {
         }
       }
 
+      // 如果触及断路器，直接中止
+      if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+         return {
+           text: `[Warning] 连续发生 ${consecutiveErrors} 次工具执行错误，已触发断路器挂起并等待用户介入。`,
+           usage: { promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens },
+         };
+      }
+
       // 无工具调用 → 终止循环，返回文本
       if (toolCalls.length === 0 || stopReason === 'end_turn') {
         return {
@@ -130,6 +141,8 @@ export class QueryEngine {
 
       // 执行每个工具调用
       const toolResults: ToolResultContentBlock[] = [];
+      let currentTurnHasError = false;
+      
       for (const tc of toolCalls) {
         onToolStart?.(tc.name, tc.input);
 
@@ -173,6 +186,7 @@ export class QueryEngine {
             };
             toolResults.push(errResult);
             onToolEnd?.(tc.name, errResult.content, true);
+            currentTurnHasError = true;
             continue;
           }
 
@@ -185,6 +199,9 @@ export class QueryEngine {
           };
           toolResults.push(toolResult);
           onToolEnd?.(tc.name, result.output, result.isError ?? false);
+          if (result.isError) {
+             currentTurnHasError = true;
+          }
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
           const errResult: ToolResultContentBlock = {
@@ -195,7 +212,15 @@ export class QueryEngine {
           };
           toolResults.push(errResult);
           onToolEnd?.(tc.name, errResult.content, true);
+          currentTurnHasError = true;
         }
+      }
+
+      // 根据当前 turn 的执行结果更新断路器
+      if (currentTurnHasError) {
+         consecutiveErrors++;
+      } else {
+         consecutiveErrors = 0;
       }
 
       // 将工具结果作为 user 消息追加（OpenAI 需要 role=tool，内部消息格式统一用 user）

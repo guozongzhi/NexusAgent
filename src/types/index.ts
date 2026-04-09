@@ -114,8 +114,14 @@ export interface ToolDefinition<TInput extends z.ZodType = z.ZodType> {
   description: string;
   /** Zod schema 定义输入参数 */
   inputSchema: TInput;
-  /** 是否为只读工具（只读工具跳过确认） */
-  isReadOnly: boolean;
+  /** 权限认证类型：
+   * - 'safe': 无副作用，自动跳过确认 (如 file_read)
+   * - 'requires_confirm': 默认需确认，但可通过 Always Allow 短路 (如 file_write)
+   * - 'dangerous': 高危操作，无视 Always Allow 强制拦截需确认
+   */
+  authType?: 'safe' | 'requires_confirm' | 'dangerous';
+  /** 是否为只读工具（只读工具跳过确认，将被 authType 取代） */
+  isReadOnly?: boolean;
   /** 工具执行逻辑 */
   call(input: z.infer<TInput>, context: ToolUseContext): Promise<ToolResult>;
 }
