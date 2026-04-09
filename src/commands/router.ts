@@ -1,4 +1,4 @@
-import { updateConfig } from '../config.ts';
+import { updateConfig, loadConfig } from '../config.ts';
 import { clearSession } from '../services/history/sessionStore.ts';
 import { truncateMessages, estimateTokens } from '../services/history/tokenWindow.ts';
 import type { NexusConfig } from '../types/index.ts';
@@ -61,6 +61,7 @@ export async function parseAndRouteCommand(query: string, actions: CommandAction
   **/status**   — 显示当前连接状态、模型、token 用量
   **/history**  — 查看当前会话的消息数和 token 估算
   **/compact**  — 压缩上下文窗口（截断旧消息）
+  **/mcp**      — 管理 MCP 动态插件扩展 (list/add/remove)
   **/bug**      — 报告 Bug（生成环境诊断信息）
   **/version**  — 显示版本号
   **/exit**     — 安全退出应用
@@ -151,6 +152,46 @@ export async function parseAndRouteCommand(query: string, actions: CommandAction
         handled: true,
         output: `上下文已压缩: ${before} → ${after} 条消息`,
       };
+    }
+
+    case '/mcp': {
+      if (parts.length < 2) {
+        return { handled: true, output: '用法:\n  `/mcp list`\n  `/mcp add <name> <command...>`\n  `/mcp rm <name>`' };
+      }
+      const subCmd = parts[1];
+      const config = await loadConfig();
+      const servers = config.mcpServers || {};
+      
+      if (subCmd === 'list') {
+        const count = Object.keys(servers).length;
+        if (count === 0) return { handled: true, output: '未配置任何外部 MCP 服务器。' };
+        const list = Object.entries(servers).map(([name, conf]) => `- **${name}**: \`${conf.command} ${conf.args.join(' ')}\``).join('\n');
+        return { handled: true, output: `已配置的 MCP 服务器:\n${list}\n\n*Agent 会在下次提问时自动挂载它们的工具。*` };
+      }
+      
+      if (subCmd === 'add') {
+        if (parts.length < 4) return { handled: true, output: '用法: `/mcp add <name> <command> [args...]`' };
+        const name = parts[2]!;
+        const cmd = parts[3]!;
+        const args = parts.slice(4);
+        servers[name] = { command: cmd, args };
+        await updateConfig({ mcpServers: servers });
+        actions.reloadConfig();
+        return { handled: true, output: `✅ MCP 服务器 \`${name}\` 已成功录入。\n配置值: \`${cmd} ${args.join(' ')}\`` };
+      }
+
+      if (subCmd === 'remove' || subCmd === 'rm') {
+        const name = parts[2];
+        if (!name) return { handled: true, output: '用法: `/mcp rm <name>`' };
+        if (servers[name]) {
+          delete servers[name];
+          await updateConfig({ mcpServers: servers });
+          actions.reloadConfig();
+          return { handled: true, output: `🗑️ MCP 服务器 \`${name}\` 已移除。` };
+        }
+        return { handled: true, output: `找不到名为 \`${name}\` 的 MCP 服务器。` };
+      }
+      return { handled: true, output: '未知的 /mcp 子命令。' };
     }
 
     case '/bug': {

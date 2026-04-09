@@ -36,6 +36,7 @@ import { truncateMessages } from './services/history/tokenWindow.ts';
 import { autoCompactIfNeeded, createAutoCompactState, compactConversation } from './services/compact/index.ts';
 import { padToTermWidth } from './utils/path.ts';
 import { isToolAutoApproved, addAutoApprovedTool } from './security/permissionStore.ts';
+import { mcpManager } from './services/mcp/McpClientManager.ts';
 
 const NEXUS_VERSION = '0.1.0';
 export const READ_ONLY_TOOLS = ['file_read', 'list_dir', 'search', 'grep', 'glob', 'note'];
@@ -181,6 +182,11 @@ function NexusApp({ oneShotQuery }: { oneShotQuery?: string }) {
       const actualModel = conf.model || process.env.OPENAI_MODEL || 'gpt-4o';
       setModelName(actualModel);
 
+      // 连接所有 MCP 外部服务
+      if (conf.mcpServers) {
+        await mcpManager.connectAll(conf.mcpServers);
+      }
+
       // P1-1: API 连通性检测（用于 Onboarding）
       if (apiKey && apiKey !== 'UNSET_KEY_WAITING_FOR_USER') {
         try {
@@ -315,8 +321,18 @@ function NexusApp({ oneShotQuery }: { oneShotQuery?: string }) {
       // Fallback: 最终安全截断
       const trimmedMessages = truncateMessages(workingMessages);
 
-      // P0-1: 通过 ESM import 获取工具定义（tools/index.ts 副作用注册已在顶层触发）
-      const toolDefs = getAllFunctionDefs();
+      // P0-1: 获取本地内置工具
+      const localToolDefs = getAllFunctionDefs();
+      const mcpToolsRaw = await mcpManager.getAllTools();
+      const mcpToolDefs: import('./types/index.ts').OpenAIFunctionDef[] = mcpToolsRaw.map(t => ({
+        type: 'function',
+        function: {
+          name: `mcp__${t.serverName}__${t.toolName}`,
+          description: `[外部 MCP 工具: ${t.serverName}] ${t.description}`,
+          parameters: t.inputSchema,
+        }
+      }));
+      const toolDefs = [...localToolDefs, ...mcpToolDefs];
 
       const response = await engineRef.current.run({
         systemPrompt: sysPrompt,
@@ -353,9 +369,10 @@ function NexusApp({ oneShotQuery }: { oneShotQuery?: string }) {
         },
         onToolApprovalRequest: async (toolName: string, args: any) => {
           const toolInstance = getTool(toolName);
-          const rawAuth = toolInstance?.authType || (toolInstance?.isReadOnly ? 'safe' : 'requires_confirm');
+          const isMcp = toolName.startsWith('mcp__');
+          const rawAuth = isMcp ? 'requires_confirm' : (toolInstance?.authType || (toolInstance?.isReadOnly ? 'safe' : 'requires_confirm'));
           // 容错处理
-          const authType = READ_ONLY_TOOLS.includes(toolName) ? 'safe' : rawAuth;
+          const authType = READ_ONLY_TOOLS.includes(toolName) && !isMcp ? 'safe' : rawAuth;
           
           if (authType === 'safe') {
             return true;

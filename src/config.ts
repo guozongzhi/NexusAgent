@@ -13,6 +13,7 @@ const DEFAULT_CONFIG: NexusConfig = {
   apiKey: '',
   model: 'gpt-4o',
   systemPrompt: '', // 由 context.ts 动态生成
+  mcpServers: {},
 };
 
 /**
@@ -37,6 +38,7 @@ export async function loadConfig(): Promise<NexusConfig> {
     apiKey: process.env['NEXUS_API_KEY'] ?? process.env['OPENAI_API_KEY'] ?? fileConfig.apiKey ?? DEFAULT_CONFIG.apiKey,
     model: process.env['NEXUS_MODEL'] ?? fileConfig.model ?? DEFAULT_CONFIG.model,
     systemPrompt: fileConfig.systemPrompt ?? DEFAULT_CONFIG.systemPrompt,
+    mcpServers: fileConfig.mcpServers ?? DEFAULT_CONFIG.mcpServers,
   };
 }
 

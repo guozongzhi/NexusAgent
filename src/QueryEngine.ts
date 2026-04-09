@@ -20,6 +20,7 @@ import type {
   ToolUseContext,
 } from './types/index.ts';
 import { getTool } from './Tool.ts';
+import { mcpManager } from './services/mcp/McpClientManager.ts';
 
 /** QueryEngine 运行参数 */
 export interface QueryEngineParams {
@@ -146,6 +147,47 @@ export class QueryEngine {
       for (const tc of toolCalls) {
         onToolStart?.(tc.name, tc.input);
 
+        // -- MCP 工具分支 --
+        if (tc.name.startsWith('mcp__')) {
+           const [_, serverName, ...toolParts] = tc.name.split('__');
+           const originalToolName = toolParts.join('__');
+           
+           if (onToolApprovalRequest) {
+             const approved = await onToolApprovalRequest(tc.name, tc.input);
+             if (!approved) {
+               const errResult: ToolResultContentBlock = {
+                 type: 'tool_result',
+                 tool_use_id: tc.id,
+                 content: `[ERROR] 用户拒绝了执行此外部 MCP 工具`,
+                 is_error: true,
+               };
+               toolResults.push(errResult);
+               onToolEnd?.(tc.name, errResult.content, true);
+               continue;
+             }
+           }
+           
+           try {
+              const res = await mcpManager.callTool(serverName!, originalToolName, tc.input);
+              const toolResult: ToolResultContentBlock = {
+                type: 'tool_result',
+                tool_use_id: tc.id,
+                content: res.output,
+                is_error: res.isError,
+              };
+              toolResults.push(toolResult);
+              onToolEnd?.(tc.name, res.output, res.isError ?? false);
+              if (res.isError) currentTurnHasError = true;
+           } catch(err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              toolResults.push({ type: 'tool_result', tool_use_id: tc.id, content: `[ERROR] MCP Call failed: ${msg}`, is_error: true });
+              onToolEnd?.(tc.name, msg, true);
+              currentTurnHasError = true;
+           }
+           continue;
+        }
+
+        // -- 本地内置工具分支 --
         const tool = getTool(tc.name);
         if (!tool) {
           const errResult: ToolResultContentBlock = {

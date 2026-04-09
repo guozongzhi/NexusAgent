@@ -189,4 +189,11 @@ export interface NexusConfig {
   model: string;
   /** 系统提示词 */
   systemPrompt: string;
+  /** MCP 服务配置表 ServerName -> Config */
+  mcpServers?: Record<string, McpServerConfig>;
+}
+
+export interface McpServerConfig {
+  command: string;
+  args: string[];
 }
