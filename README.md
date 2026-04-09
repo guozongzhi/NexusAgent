@@ -38,7 +38,7 @@ $ nexus
 ### 系统要求
 
 | 要求 | 最低版本 |
-|------|---------|
+|---------|---------|
 | 操作系统 | macOS 12+, Ubuntu 20.04+, Windows 10 1809+ |
 | 运行时 | [Bun](https://bun.sh) 1.0+ (安装脚本自动安装) |
 | 硬件 | 4 GB+ RAM, x64 或 ARM64 |
@@ -49,13 +49,13 @@ $ nexus
 **macOS / Linux (推荐):**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/guozongzhi/NexusAgent/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/guozongzhi/NexusAgent/main/scripts/install.sh | bash
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-irm https://raw.githubusercontent.com/guozongzhi/NexusAgent/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/guozongzhi/NexusAgent/main/scripts/install.ps1 | iex
 ```
 
 **从源码安装:**
@@ -63,7 +63,7 @@ irm https://raw.githubusercontent.com/guozongzhi/NexusAgent/main/install.ps1 | i
 ```bash
 git clone https://github.com/guozongzhi/NexusAgent.git
 cd NexusAgent
-bash install.sh
+bash scripts/install.sh
 ```
 
 ### 配置
@@ -109,6 +109,21 @@ Nexus Agent 通过 ReAct (Reasoning + Acting) 范式驱动工具调用：
 | `glob` | 按模式搜索文件路径 | ✅ 只读 |
 | `grep` | 按正则搜索文件内容 | ✅ 只读 |
 | `note` | 记录思考笔记 (不执行操作) | ✅ 只读 |
+| `task_manage` | 自主规划与任务追踪 | 🔒 需确认 |
+| `mcp__*` | 外部 MCP 工具 (动态加载) | 🔒 需确认 |
+
+### 🔌 MCP 扩展协议
+
+支持 [Model Context Protocol](https://modelcontextprotocol.io) 动态加载外部工具：
+
+```
+/mcp add sqlite npx -y @modelcontextprotocol/server-sqlite --db test.db
+/mcp add github npx -y @modelcontextprotocol/server-github
+/mcp list
+/mcp rm sqlite
+```
+
+外部工具自动合并进 Agent 可用工具集，通过 stdio 子进程透明代理调用。
 
 ### 🧠 上下文压缩
 
@@ -142,7 +157,8 @@ Nexus Agent 通过 ReAct (Reasoning + Acting) 范式驱动工具调用：
 - **敏感文件保护** — 禁止修改 `.zshrc` / `.ssh/` / `.gitconfig` 等
 - **危险命令黑名单** — 拦截 `rm -rf /` / fork 炸弹 / `mkfs` 等
 - **文件大小限制** — 写入上限 10MB
-- **权限确认** — 写入操作需用户确认，支持 `Always Allow`
+- **三级权限控制** — `safe` (自动放行) / `requires_confirm` (需确认，支持 Always Allow) / `dangerous` (强制拦截)
+- **持久化权限** — Always Allow 跨会话记忆 (`~/.nexus/permissions.json`)
 
 ### 📋 项目指令 (NEXUS.md)
 
@@ -161,7 +177,7 @@ Nexus Agent 通过 ReAct (Reasoning + Acting) 范式驱动工具调用：
 
 ## 命令参考
 
-### 内置命令
+### 内置斜杠命令
 
 | 命令 | 描述 |
 |------|------|
@@ -172,6 +188,9 @@ Nexus Agent 通过 ReAct (Reasoning + Acting) 范式驱动工具调用：
 | `/status` | 显示连接状态、模型、token 用量 |
 | `/history` | 查看会话消息数和 token 估算 |
 | `/compact` | 手动触发上下文压缩 |
+| `/mcp list\|add\|rm` | 管理 MCP 扩展插件 |
+| `/bug` | 生成环境诊断信息 |
+| `/version` | 显示版本号 |
 | `/exit` | 退出应用 |
 
 ### CLI 命令
@@ -191,12 +210,12 @@ nexus doctor          # 运行环境诊断
 nexus-agent/
 ├── src/
 │   ├── main.tsx              # 应用入口 + Ink UI 主循环
-│   ├── QueryEngine.ts        # ReAct 查询引擎 (流式 + tool_call 循环)
+│   ├── QueryEngine.ts        # ReAct 查询引擎 (流式 + tool_call 循环 + 断路器)
 │   ├── Tool.ts               # 工具注册表
-│   ├── context.ts            # System Prompt 构建
-│   ├── config.ts             # 配置加载/持久化
+│   ├── context.ts            # System Prompt 构建 (含 Planner 上下文注入)
+│   ├── config.ts             # 配置加载/持久化 (含 MCP Servers)
 │   ├── commands/
-│   │   └── router.ts         # 内置命令路由器
+│   │   └── router.ts         # 内置命令路由器 (/mcp, /config, /compact...)
 │   ├── components/           # Ink (React) 终端 UI 组件
 │   │   ├── Welcome.tsx       # 欢迎界面
 │   │   ├── StatusBar.tsx     # 底部状态栏
@@ -212,20 +231,30 @@ nexus-agent/
 │   │   ├── GlobTool.ts
 │   │   ├── GrepTool.ts
 │   │   ├── ListDirTool.ts
-│   │   └── NoteTool.ts
+│   │   ├── NoteTool.ts
+│   │   └── TaskManageTool.ts # 自主规划与任务追踪
 │   ├── services/
-│   │   ├── api/              # LLM 适配层
+│   │   ├── api/              # LLM 适配层 (OpenAI 兼容)
 │   │   ├── compact/          # 上下文压缩服务
 │   │   ├── history/          # 会话管理 + Token 窗口
+│   │   ├── mcp/              # MCP 客户端管理器
+│   │   │   └── McpClientManager.ts
+│   │   ├── agent/            # Agent 状态机与规划
+│   │   │   └── planner.ts
 │   │   └── projectConfig.ts  # NEXUS.md 加载
 │   ├── security/
-│   │   └── pathGuard.ts      # 路径安全 + 命令黑名单
+│   │   ├── pathGuard.ts      # 路径安全 + 命令黑名单
+│   │   └── permissionStore.ts # 持久化权限 (跨会话 Always Allow)
 │   ├── types/
 │   │   └── index.ts          # 核心类型定义
 │   └── utils/                # 工具函数
+├── scripts/                  # 安装/卸载脚本
+│   ├── install.sh            # macOS/Linux 安装
+│   ├── install.ps1           # Windows 安装
+│   ├── uninstall.sh          # macOS/Linux 卸载
+│   └── uninstall.ps1         # Windows 卸载
 ├── tests/                    # 测试套件
-├── install.sh                # macOS/Linux 安装
-├── install.ps1               # Windows 安装
+├── assets/                   # 静态资源 (图标等)
 └── ARCHITECTURE.md           # 架构设计文档
 ```
 
@@ -237,7 +266,13 @@ nexus-agent/
 {
   "model": "gpt-4o",
   "baseUrl": "https://api.openai.com/v1",
-  "apiKey": "sk-..."
+  "apiKey": "sk-...",
+  "mcpServers": {
+    "sqlite": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sqlite", "--db", "test.db"]
+    }
+  }
 }
 ```
 
@@ -318,21 +353,24 @@ chore:    构建/工具链更新
 | CLI | [Commander.js](https://github.com/tj/commander.js) | CLI 参数解析 |
 | 验证 | [Zod](https://github.com/colinhacks/zod) | 运行时 Schema 验证 |
 | LLM | [OpenAI SDK](https://github.com/openai/openai-node) | LLM API 客户端 |
+| 扩展 | [MCP SDK](https://modelcontextprotocol.io) | 外部工具协议 |
 
 ## 路线图
 
 - [x] ReAct 查询引擎 + 流式输出
-- [x] 8 个核心工具
-- [x] 权限确认 + Always Allow
-- [x] 上下文压缩 (MicroCompact + Full Compact)
+- [x] 9 个核心工具 (含 task_manage)
+- [x] 三级权限 (safe / requires_confirm / dangerous) + Always Allow 持久化
+- [x] 上下文压缩 (MicroCompact + Full Compact + Truncate)
 - [x] NEXUS.md 项目指令
 - [x] 跨平台安装 (macOS/Linux/Windows)
+- [x] MCP 协议支持 (动态外挂工具)
+- [x] Agent Planner (自主任务规划)
+- [x] QueryEngine 断路器 (连续错误熔断)
 - [ ] Session Memory (增量式记忆提取)
 - [ ] AgentTool (子代理分发)
-- [ ] MCP 协议支持
 - [ ] IDE 集成 (VS Code / JetBrains)
 - [ ] `nexus init` 项目初始化
-- [ ] 多模型并发对比
+- [ ] Git 工作流集成 (/commit, /diff)
 
 ## 许可证
 

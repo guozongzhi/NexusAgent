@@ -54,18 +54,20 @@ tests/compact.test.ts        # 对应模块名 + .test.ts
 ```
 src/
 ├── main.tsx              # 入口：Ink App + 查询循环
-├── QueryEngine.ts        # ReAct 引擎
+├── QueryEngine.ts        # ReAct 引擎 + 断路器
 ├── Tool.ts               # 工具注册表
-├── context.ts            # System Prompt
-├── config.ts             # 配置管理
-├── commands/             # 斜杠命令
+├── context.ts            # System Prompt + Planner 注入
+├── config.ts             # 配置管理 (含 MCP Servers)
+├── commands/             # 斜杠命令 (/mcp, /config...)
 ├── components/           # Ink UI 组件
-├── tools/                # 工具实现
+├── tools/                # 工具实现 (含 TaskManageTool)
 ├── services/             # 业务服务
 │   ├── api/              # LLM 适配器
 │   ├── compact/          # 上下文压缩
-│   └── history/          # 会话管理
-├── security/             # 安全防护
+│   ├── history/          # 会话管理
+│   ├── mcp/              # MCP 客户端管理器
+│   └── agent/            # Agent 状态机与规划
+├── security/             # 安全防护 + 持久化权限
 ├── types/                # 类型定义
 └── utils/                # 工具函数
 ```

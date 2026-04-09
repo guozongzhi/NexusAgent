@@ -5,9 +5,9 @@
 ## 设计哲学
 
 1. **Agent 而非 Copilot** — 直接执行操作，而不是仅仅给出建议
-2. **安全优先** — 所有写入操作需要人类确认
+2. **安全优先** — 分级权限控制，高危操作强制拦截
 3. **流式优先** — 所有 LLM 交互使用 SSE 流式输出
-4. **可扩展** — 工具/命令/LLM 适配器均为插件化注册
+4. **可扩展** — 工具/命令/LLM 适配器均为插件化注册，支持 MCP 外挂
 
 ## 系统架构
 
@@ -30,50 +30,45 @@
 │                      main.tsx (App)                           │
 │                                                               │
 │  handleSubmit() ──► 命令路由 ──► CommandRouter                │
-│       │                                                       │
+│       │                              ├─ /mcp (MCP 管理)      │
+│       │                              └─ /config,/compact...   │
 │       ▼                                                       │
-│  buildSystemPromptAsync() ──► context.ts + NEXUS.md           │
+│  buildSystemPromptAsync() ──► context.ts + planner + NEXUS.md│
 │       │                                                       │
-│       ▼                                                       │
-│  autoCompactIfNeeded() ──► compact/ (MicroCompact + Full)     │
+│  autoCompactIfNeeded() ──► compact/ (MicroCompact + Full)    │
 │       │                                                       │
-│       ▼                                                       │
-│  QueryEngine.run() ──► ReAct 循环                             │
+│  MCP Tool Merge ──► local tools + mcpManager.getAllTools()    │
+│       │                                                       │
+│  QueryEngine.run() ──► ReAct 循环 + 断路器                    │
 └────────────────────────────┬─────────────────────────────────┘
                              │
-┌────────────────────────────▼─────────────────────────────────┐
-│                    QueryEngine                                │
-│                                                               │
-│  ┌─────────────────────────────────────────────────────────┐ │
-│  │               ReAct Loop (stream)                        │ │
-│  │                                                          │ │
-│  │  1. 发送 messages + tools → LLM                         │ │
-│  │  2. 流式接收 response                                    │ │
-│  │  3. 如果有 tool_call:                                    │ │
-│  │     a. 权限检查 (isReadOnly? → auto, else → confirm)     │ │
-│  │     b. 执行 tool.call()                                  │ │
-│  │     c. 将 tool_result 追加到 messages                    │ │
-│  │     d. 回到步骤 1                                        │ │
-│  │  4. 如果是纯文本 → 返回最终响应                           │ │
-│  └─────────────────────────────────────────────────────────┘ │
-└────────────────────────────┬─────────────────────────────────┘
+    ┌────────────────────────┼────────────────────────┐
+    ▼                        ▼                        ▼
+┌──────────────┐  ┌───────────────────┐  ┌────────────────────┐
+│ LLM Adapter  │  │  Tool Registry    │  │  Security Layer    │
+│              │  │                   │  │                    │
+│ OpenAIAdapter│  │  bash             │  │  validatePath()    │
+│ (OpenAI SDK) │  │  file_read/write  │  │  validateCommand() │
+│              │  │  file_edit        │  │  validateWriteSize │
+│ stream()     │  │  list_dir/glob    │  │  validateSensitive │
+│              │  │  grep / note      │  │                    │
+│ 支持:        │  │  task_manage      │  │  permissionStore   │
+│ · OpenAI     │  │  ─────────────    │  │  (持久化权限)      │
+│ · Ollama     │  │  mcp__* (动态)    │  │                    │
+│ · vLLM       │  │                   │  │  pathGuard         │
+│ · LiteLLM    │  │  registerTool()   │  │  (路径+命令校验)   │
+└──────────────┘  └───────────────────┘  └────────────────────┘
                              │
-          ┌──────────────────┼──────────────────┐
-          ▼                  ▼                  ▼
-┌────────────────┐ ┌────────────────┐ ┌────────────────────┐
-│   LLM Adapter  │ │  Tool Registry │ │  Security Layer    │
-│                │ │                │ │                    │
-│  OpenAIAdapter │ │  bash          │ │  validatePath()    │
-│  (OpenAI SDK)  │ │  file_read     │ │  validateCommand() │
-│                │ │  file_write    │ │  validateWriteSize │
-│  stream()      │ │  file_edit     │ │  validateSensitive │
-│                │ │  list_dir      │ │                    │
-│  支持:         │ │  glob          │ │  Unicode NFC       │
-│  · OpenAI      │ │  grep          │ │  路径遍历防护       │
-│  · Ollama      │ │  note          │ │  敏感文件拦截       │
-│  · vLLM        │ │                │ │  命令黑名单         │
-│  · LiteLLM     │ │  registerTool()│ │                    │
-└────────────────┘ └────────────────┘ └────────────────────┘
+              ┌──────────────▼──────────────┐
+              │     MCP Client Manager      │
+              │                             │
+              │  connectAll() → 并行启动     │
+              │  getAllTools() → 拉取工具列表 │
+              │  callTool() → 跨进程 RPC     │
+              │  closeAll() → 优雅退出       │
+              │                             │
+              │  stdio transport ── 子进程   │
+              └─────────────────────────────┘
 ```
 
 ## 核心模块
@@ -82,36 +77,67 @@
 
 ReAct 查询引擎，负责 LLM 交互循环：
 
-- **输入**: System Prompt + Messages + Tool Definitions
-- **处理**: 流式解析 SSE → 提取 tool_call → 执行 → 追加结果 → 循环
-- **输出**: AsyncGenerator<StreamEvent>
+- **输入**: System Prompt + Messages + Tool Definitions (本地 + MCP 合并)
+- **处理**: 流式解析 SSE → 提取 tool_call → 权限检查 → 执行 → 追加结果 → 循环
+- **输出**: QueryResult { text, usage }
+- **熔断**: 连续 3 次工具执行错误自动挂起（Circuit Breaker）
 
 关键设计：
-- 单次 `run()` 调用可能触发多轮 tool_call 循环
-- 每轮 tool_call 的结果通过 `tool_result` message 追加到上下文
-- 流式事件通过 AsyncGenerator yield 给 UI 层
+- 单次 `run()` 调用最多触发 100 轮 tool_call 循环（支持大规模自动任务）
+- MCP 工具以 `mcp__<server>__<tool>` 前缀标识，单独路由到外部进程
+- `consecutiveErrors` 计数器防止死循环吞噬 token
 
 ### 2. Tool 系统 (`src/Tool.ts` + `src/tools/`)
 
 插件化工具注册机制：
 
 ```typescript
-// 注册一个工具
 registerTool({
   name: 'my_tool',
   description: '工具描述',
   inputSchema: z.object({ ... }),
-  isReadOnly: true,
+  authType: 'requires_confirm',  // 'safe' | 'requires_confirm' | 'dangerous'
   async call(input, context) { ... }
 });
 ```
 
 设计要点：
 - Zod schema 自动转换为 OpenAI function parameters
-- `isReadOnly` 决定是否需要用户确认
-- 所有工具通过 `import` 副作用自动注册
+- `authType` 三级权限：`safe` 自动放行 / `requires_confirm` 可 Always Allow / `dangerous` 强制拦截
+- 兼容旧 `isReadOnly` 字段，自动映射到 `safe` / `requires_confirm`
 
-### 3. 上下文压缩 (`src/services/compact/`)
+### 3. 权限系统 (`src/security/`)
+
+```
+工具调用请求
+    │
+    ├─ authType === 'safe' ──► 直接执行
+    │
+    ├─ authType === 'requires_confirm'
+    │     ├─ permissionStore 命中 ──► 自动执行 (跨会话 Always Allow)
+    │     └─ 未命中 ──► PermissionPrompt (Y/N/A)
+    │                     └─ A ──► 写入 ~/.nexus/permissions.json
+    │
+    └─ authType === 'dangerous' ──► 强制 PermissionPrompt (无视 Always Allow)
+```
+
+持久化存储支持全局级 (`alwaysAllowedGlobal`) 和项目级 (`alwaysAllowedProject`) 两层粒度。
+
+### 4. MCP 客户端 (`src/services/mcp/`)
+
+通过 `@modelcontextprotocol/sdk` 实现标准 MCP 客户端：
+- 基于 stdio transport 管理多个外部子进程服务器
+- 自动拉取工具列表并以 `mcp__server__tool` 格式合并到 LLM function calling
+- 跨进程 RPC 调用与错误隔离
+
+### 5. Agent Planner (`src/services/agent/planner.ts`)
+
+Agent 状态机与任务管理：
+- 三种模式: `interactive` | `plan` | `execute`
+- 任务清单通过 `getPlannerContext()` 动态注入 System Prompt
+- `TaskManageTool` 提供给 LLM 自主建立/更新/完成任务的能力
+
+### 6. 上下文压缩 (`src/services/compact/`)
 
 三层压缩策略：
 
@@ -121,28 +147,7 @@ registerTool({
 | Full Compact | token > 80% 窗口 | 1 次 LLM 调用 | 9 段式结构化摘要 |
 | Truncate | Fallback | 零 | 丢弃最旧消息 |
 
-Full Compact 的 9 段摘要格式：
-1. 主要请求与意图
-2. 关键技术概念
-3. 文件与代码变更
-4. 待办任务
-5. 当前工作
-6. 重要上下文
-7. 用户偏好
-8. 错误与经验
-9. 下一步计划
-
-### 4. 安全层 (`src/security/pathGuard.ts`)
-
-防御纵深设计：
-
-```
-用户输入 → Unicode NFC 规范化 → 路径解析 → 范围检查 → 敏感文件检查 → 执行
-                                                          ↓
-                                              命令黑名单过滤 (仅 bash)
-```
-
-### 5. UI 层 (`src/components/`)
+### 7. UI 层 (`src/components/`)
 
 基于 Ink (React for CLI) 的终端 UI：
 
@@ -157,6 +162,7 @@ Full Compact 的 9 段摘要格式：
 用户输入
   │
   ├─ 以 / 开头? ──► CommandRouter ──► 直接返回结果
+  │                    └─ /mcp add/rm/list → 管理外部工具
   │
   └─► 追加到 historyRef
         │
@@ -166,12 +172,14 @@ Full Compact 的 9 段摘要格式：
         │
         ├─► truncateMessages() (最终安全截断)
         │
+        ├─► Merge: getAllFunctionDefs() + mcpManager.getAllTools()
+        │
         └─► QueryEngine.run()
               │
-              ├─ stream: text_delta ──► UI 渲染
-              ├─ stream: tool_use ──► ToolPanel + 权限检查
-              ├─ stream: tool_result ──► 追加 + 继续循环
-              └─ stream: done ──► 完成，移入 Static 区域
+              ├─ tool_call(mcp__*)  ──► mcpManager.callTool()
+              ├─ tool_call(local)   ──► getTool() → tool.call()
+              │    └─ 权限检查: safe → auto / requires_confirm → store/prompt / dangerous → prompt
+              └─ text → 完成，移入 Static 区域
 ```
 
 ## 配置系统
@@ -180,7 +188,8 @@ Full Compact 的 9 段摘要格式：
 优先级: 命令行参数 > 环境变量 > ~/.nexus/config.json > 默认值
 
 ~/.nexus/
-├── config.json          # 用户配置
+├── config.json          # 用户配置 (含 mcpServers)
+├── permissions.json     # 持久化权限 (Always Allow)
 └── sessions/            # 会话历史
     └── <hash>.json
 
@@ -193,13 +202,22 @@ Full Compact 的 9 段摘要格式：
 ### 添加新工具
 
 1. 在 `src/tools/` 创建 `MyTool.ts`
-2. 使用 `registerTool()` 注册
+2. 使用 `registerTool()` 注册，指定 `authType`
 3. 在 `src/tools/index.ts` 中 import
 4. 完成——工具会自动出现在 LLM 的可用工具列表中
 
 ### 添加新命令
 
 在 `src/commands/router.ts` 的 switch 中添加新 case。
+
+### 添加 MCP 外部工具
+
+```bash
+/mcp add <name> <command> [args...]
+# 例：/mcp add sqlite npx -y @modelcontextprotocol/server-sqlite --db test.db
+```
+
+或直接编辑 `~/.nexus/config.json` 的 `mcpServers` 字段。
 
 ### 支持新的 LLM 提供商
 
@@ -211,16 +229,3 @@ interface LLMAdapter {
   stream(params: LLMStreamParams): AsyncGenerator<StreamEvent>;
 }
 ```
-
-## 与 Claude Code 的对比
-
-| 系统 | Claude Code | Nexus Agent |
-|------|-------------|-------------|
-| 分发方式 | 原生二进制 + npm | Bun 源码 + curl 安装 |
-| 运行时 | 内嵌 Node.js | Bun |
-| LLM | Claude (Anthropic) | 任意 OpenAI 兼容 |
-| UI | Ink | Ink |
-| 工具系统 | 53 个内置 | 8 个核心 |
-| 上下文压缩 | 5 层 15 文件 | 3 层 5 文件 |
-| 安全 | 4 级权限 + ML | 2 级 + 黑名单 |
-| 开源 | MIT | MIT |

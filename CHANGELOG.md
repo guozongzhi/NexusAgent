@@ -5,6 +5,35 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/)，
 版本号遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.2.0] - 2026-04-09
+
+### 新增
+
+- **MCP 协议支持** — 通过 `@modelcontextprotocol/sdk` 动态加载外部工具
+  - `McpClientManager` 管理多个 stdio 子进程服务器
+  - `/mcp add|rm|list` 命令行管理
+  - 工具以 `mcp__<server>__<tool>` 格式自动合并进 Agent
+- **Agent Planner** — 自主规划与任务管理状态机
+  - `TaskManageTool` 支持 add/update/complete/clear/list
+  - 任务列表动态注入 System Prompt
+  - 三种模式: interactive / plan / execute
+- **持久化权限** — Always Allow 跨会话记忆
+  - `permissionStore.ts` 读写 `~/.nexus/permissions.json`
+  - 支持全局级 + 项目级两层粒度
+- **三级权限模型** — `authType: 'safe' | 'requires_confirm' | 'dangerous'`
+  - `safe`: 自动放行（只读工具）
+  - `requires_confirm`: 默认需确认，可 Always Allow
+  - `dangerous`: 强制拦截，无视 Always Allow
+- **QueryEngine 断路器** — 连续 3 次工具错误自动熔断
+  - `MAX_ITERATIONS` 从 20 放大到 100（支持大规模自动任务）
+  - `consecutiveErrors` 计数器防止死循环
+
+### 变更
+
+- 安装脚本移入 `scripts/` 目录
+- `ToolDefinition.isReadOnly` 标记为可选，推荐使用 `authType`
+- `NexusConfig` 新增 `mcpServers` 字段
+
 ## [0.1.0] - 2026-04-09
 
 ### 新增

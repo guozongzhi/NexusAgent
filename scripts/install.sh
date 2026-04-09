@@ -3,7 +3,7 @@
 # Nexus Agent — 一键安装脚本（macOS / Linux / WSL）
 #
 # 用法：
-#   curl -fsSL https://raw.githubusercontent.com/guozongzhi/NexusAgent/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/guozongzhi/NexusAgent/main/scripts/install.sh | bash
 #   curl -fsSL ... | bash -s <version>    # 安装指定版本/分支
 #
 # 安装位置：
@@ -47,7 +47,7 @@ detect_platform() {
   case "$os" in
     Darwin)        PLATFORM="macOS" ;;
     Linux)         PLATFORM="Linux" ;;
-    MINGW*|MSYS*)  fail "检测到 Windows 环境。请使用 PowerShell 安装：irm https://raw.githubusercontent.com/guozongzhi/NexusAgent/main/install.ps1 | iex" ;;
+    MINGW*|MSYS*)  fail "检测到 Windows 环境。请使用 PowerShell 安装：irm https://raw.githubusercontent.com/guozongzhi/NexusAgent/main/scripts/install.ps1 | iex" ;;
     *)             fail "不支持的操作系统: $os" ;;
   esac
 

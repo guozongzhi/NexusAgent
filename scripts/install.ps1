@@ -1,7 +1,7 @@
 # Nexus Agent — 一键安装脚本 (Windows PowerShell)
 #
 # 用法：
-#   irm https://raw.githubusercontent.com/guozongzhi/NexusAgent/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/guozongzhi/NexusAgent/main/scripts/install.ps1 | iex
 #   & ([scriptblock]::Create((irm https://...install.ps1))) <version>
 #
 # 安装位置：
