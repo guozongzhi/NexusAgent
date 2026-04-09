@@ -1,25 +1,26 @@
 <p align="center">
   <h1 align="center">Nexus Agent</h1>
   <p align="center">
-    <strong>基于 ReAct 范式的本地命令行 AI 编程助手</strong>
+    <strong>基于 ReAct 范式的自主编程 CLI Agent</strong>
   </p>
   <p align="center">
     <a href="#快速开始">快速开始</a> •
-    <a href="#功能特性">功能特性</a> •
-    <a href="#架构设计">架构</a> •
+    <a href="#核心能力">核心能力</a> •
+    <a href="#工具系统">工具</a> •
     <a href="#命令参考">命令</a> •
-    <a href="#贡献指南">贡献</a>
+    <a href="#架构">架构</a> •
+    <a href="docs/CONTRIBUTING.md">贡献</a>
   </p>
 </p>
 
 ---
 
-Nexus Agent 是一个运行在终端中的智能编程助手。它理解你的代码库，通过自然语言指令执行文件操作、代码搜索、Shell 命令等任务——直接在你的本地环境中行动，而不是仅仅给出建议。
+Nexus Agent 是一个运行在终端中的**自主编程助手**。它理解你的代码库，通过自然语言指令直接执行文件操作、代码重构、Shell 命令、网络搜索等任务——在你的本地环境中**行动**，而不是仅仅给出建议。
 
 ```
 $ nexus
 ┌─────────────────────────────────────────────────────────────┐
-│  Nexus Agent v0.1.0                                         │
+│  Nexus Agent v0.3.0                                         │
 │  Model: gpt-4o · Context: 128k                              │
 │  cwd: ~/projects/my-app                                     │
 └─────────────────────────────────────────────────────────────┘
@@ -63,7 +64,8 @@ irm https://raw.githubusercontent.com/guozongzhi/NexusAgent/main/scripts/install
 ```bash
 git clone https://github.com/guozongzhi/NexusAgent.git
 cd NexusAgent
-bash scripts/install.sh
+bun install
+bun run dev
 ```
 
 ### 配置
@@ -77,7 +79,7 @@ export OPENAI_API_KEY="sk-..."
 或启动后使用内置命令：
 
 ```
-/config apiKey sk-...
+/config set apiKey sk-...
 ```
 
 支持任何 OpenAI 兼容 API（Ollama、vLLM、LiteLLM 等）：
@@ -90,14 +92,78 @@ export OPENAI_API_KEY="ollama"
 ### 启动
 
 ```bash
-nexus
+nexus                                    # 交互模式
+nexus "重构 src/utils 的所有函数"          # 一次性非交互模式
+nexus --dangerously-skip-permissions      # CI/CD 静默模式
 ```
 
-## 功能特性
+## 核心能力
 
-### 🔧 工具系统
+### 🧠 ReAct 推理引擎
 
-Nexus Agent 通过 ReAct (Reasoning + Acting) 范式驱动工具调用：
+- **多轮自主推理** — 最多 100 轮 tool_call 循环，支持复杂的大规模任务
+- **并行工具执行** — 同一轮次多个 tool_call 通过 `Promise.allSettled` 并发执行
+- **断路器保护** — 连续 3 次工具错误自动熔断，防止 Token 无限消耗
+- **统一超时控制** — 每个工具调用 60 秒超时保护，防止单工具死锁
+- **中断支持** — `Ctrl+C` 通过 AbortController 全链路中断
+
+### 🔍 网络搜索与信息获取
+
+- **WebFetchTool** — 抓取任意 URL 内容（HTML→纯文本 / JSON 解析）
+- **WebSearchTool** — 基于 DuckDuckGo 的互联网搜索，自动解码跳转链接
+
+### 🧬 跨会话长效记忆
+
+```
+/memory add "本项目使用 pnpm 作为包管理器"
+/memory add "代码风格偏好：函数式编程，避免 class"
+/memory list
+```
+
+记忆持久化存储在 `~/.nexus/memory.json`，每次对话开始前自动注入 System Prompt，让 Agent 真正"记住"你的偏好。
+
+### ⚡ 可编程技能系统
+
+```
+/skills add review-pr "审查当前 Git 变更，给出代码质量评估和改进建议"
+/sk review-pr                    # 一键执行预设工作流
+/skills list                     # 查看所有技能
+```
+
+技能存储在 `~/.nexus/skills/*.json`，通过 prompt 重定向机制无缝接管 QueryEngine。
+
+### 🔌 MCP 扩展协议
+
+支持 [Model Context Protocol](https://modelcontextprotocol.io) 动态加载外部工具：
+
+```
+/mcp add sqlite npx -y @modelcontextprotocol/server-sqlite --db test.db
+/mcp add github npx -y @modelcontextprotocol/server-github
+/mcp list
+```
+
+### 📦 上下文压缩
+
+三层自动压缩策略，智能管理 Token 窗口：
+
+| 层级 | 触发条件 | 成本 | 策略 |
+|------|---------|------|------|
+| MicroCompact | token > 50% | 零 | 清理旧 tool_result 内容 |
+| Full Compact | token > 80% | 1 次 LLM 调用 | 9 段式结构化摘要 |
+| Truncate | Fallback | 零 | 丢弃最旧消息 |
+
+### 🔒 安全机制
+
+- **路径遍历防护** — 所有文件操作限制在工作目录内（Unicode NFC 规范化）
+- **敏感文件保护** — 禁止修改 `.zshrc` / `.ssh/` / `.gitconfig` 等 8 类文件
+- **危险命令黑名单** — 拦截 `rm -rf /` / fork 炸弹 / `mkfs` 等
+- **三级权限控制** — `safe` / `requires_confirm` / `dangerous`
+- **持久化权限** — Always Allow 跨会话记忆 (`~/.nexus/permissions.json`)
+- **CI/CD 模式** — `--dangerously-skip-permissions` 跳过所有确认
+
+## 工具系统
+
+Nexus Agent 通过 12 个内置工具覆盖开发全链路：
 
 | 工具 | 描述 | 权限 |
 |------|------|------|
@@ -110,74 +176,15 @@ Nexus Agent 通过 ReAct (Reasoning + Acting) 范式驱动工具调用：
 | `grep` | 按正则搜索文件内容 | ✅ 只读 |
 | `note` | 记录思考笔记 (不执行操作) | ✅ 只读 |
 | `task_manage` | 自主规划与任务追踪 | 🔒 需确认 |
-| `mcp__*` | 外部 MCP 工具 (动态加载) | 🔒 需确认 |
+| `web_fetch` | 抓取 URL 内容 (HTML/JSON) | ✅ 只读 |
+| `web_search` | 互联网搜索 (DuckDuckGo) | ✅ 只读 |
+| `notebook_edit` | Jupyter .ipynb 结构化编辑 | 🔒 需确认 |
 
-### 🔌 MCP 扩展协议
-
-支持 [Model Context Protocol](https://modelcontextprotocol.io) 动态加载外部工具：
-
-```
-/mcp add sqlite npx -y @modelcontextprotocol/server-sqlite --db test.db
-/mcp add github npx -y @modelcontextprotocol/server-github
-/mcp list
-/mcp rm sqlite
-```
-
-外部工具自动合并进 Agent 可用工具集，通过 stdio 子进程透明代理调用。
-
-### 🧠 上下文压缩
-
-参考 Claude Code 的多层压缩架构，自动管理 token 窗口：
-
-```
-                    ┌─────────────────────────────────┐
-                    │        Token 窗口检测             │
-                    └──────────┬──────────────────────┘
-                               │
-                    ┌──────────▼──────────────────────┐
-          > 50%     │      MicroCompact               │ ← 零 API 成本
-                    │  清理旧 tool_result 内容          │
-                    └──────────┬──────────────────────┘
-                               │
-                    ┌──────────▼──────────────────────┐
-          > 80%     │      Full Compact               │ ← LLM 摘要
-                    │  9 段式结构化上下文压缩            │
-                    └──────────┬──────────────────────┘
-                               │
-                    ┌──────────▼──────────────────────┐
-          Fallback  │      Truncate                   │ ← 安全截断
-                    │  保留最新消息，丢弃最旧            │
-                    └─────────────────────────────────┘
-```
-
-### 🔒 安全机制
-
-- **路径遍历防护** — 所有文件操作限制在工作目录内
-- **Unicode NFC 规范化** — 防止标准化攻击绕过
-- **敏感文件保护** — 禁止修改 `.zshrc` / `.ssh/` / `.gitconfig` 等
-- **危险命令黑名单** — 拦截 `rm -rf /` / fork 炸弹 / `mkfs` 等
-- **文件大小限制** — 写入上限 10MB
-- **三级权限控制** — `safe` (自动放行) / `requires_confirm` (需确认，支持 Always Allow) / `dangerous` (强制拦截)
-- **持久化权限** — Always Allow 跨会话记忆 (`~/.nexus/permissions.json`)
-
-### 📋 项目指令 (NEXUS.md)
-
-在项目根目录创建 `NEXUS.md` 文件来定义项目级别的 AI 行为规范：
-
-```markdown
-# 项目规范
-
-- 所有代码使用 TypeScript 严格模式
-- 使用 Bun 作为运行时
-- 测试使用 bun:test
-- 提交信息使用 Conventional Commits
-```
-
-支持层级化加载：从 `~/.nexus/NEXUS.md` (全局) 到项目目录 (就近优先)。
+所有工具使用 Zod Schema 进行输入校验，自动转换为 OpenAI function calling 格式。
 
 ## 命令参考
 
-### 内置斜杠命令
+### 斜杠命令
 
 | 命令 | 描述 |
 |------|------|
@@ -189,81 +196,35 @@ Nexus Agent 通过 ReAct (Reasoning + Acting) 范式驱动工具调用：
 | `/history` | 查看会话消息数和 token 估算 |
 | `/compact` | 手动触发上下文压缩 |
 | `/mcp list\|add\|rm` | 管理 MCP 扩展插件 |
+| `/memory add\|rm\|list\|clear` | 管理跨会话长效记忆 |
+| `/skills list\|add\|rm` | 管理可编程技能 |
+| `/sk <name>` | 执行指定技能 |
+| `/init` | 初始化项目 NEXUS.md |
+| `/diff` | 查看 Git 未提交更改 |
+| `/commit` | 查看 Git 状态并辅助提交 |
+| `/cost` | 查看当前会话 Token 成本估算 |
 | `/bug` | 生成环境诊断信息 |
 | `/version` | 显示版本号 |
 | `/exit` | 退出应用 |
 
-### CLI 命令
+### CLI 参数
 
 ```bash
-nexus                 # 启动交互式会话
-nexus --version       # 显示版本号
-nexus update          # 更新到最新版本
-nexus doctor          # 运行环境诊断
-```
-
-## 架构设计
-
-详见 [ARCHITECTURE.md](./ARCHITECTURE.md)。
-
-```
-nexus-agent/
-├── src/
-│   ├── main.tsx              # 应用入口 + Ink UI 主循环
-│   ├── QueryEngine.ts        # ReAct 查询引擎 (流式 + tool_call 循环 + 断路器)
-│   ├── Tool.ts               # 工具注册表
-│   ├── context.ts            # System Prompt 构建 (含 Planner 上下文注入)
-│   ├── config.ts             # 配置加载/持久化 (含 MCP Servers)
-│   ├── commands/
-│   │   └── router.ts         # 内置命令路由器 (/mcp, /config, /compact...)
-│   ├── components/           # Ink (React) 终端 UI 组件
-│   │   ├── Welcome.tsx       # 欢迎界面
-│   │   ├── StatusBar.tsx     # 底部状态栏
-│   │   ├── Spinner.tsx       # 流式进度指示器
-│   │   ├── ToolPanel.tsx     # 工具调用面板
-│   │   ├── PermissionPrompt  # 权限确认
-│   │   └── Onboarding.tsx    # 首次使用引导
-│   ├── tools/                # 工具实现
-│   │   ├── BashTool.ts
-│   │   ├── FileReadTool.ts
-│   │   ├── FileWriteTool.ts
-│   │   ├── FileEditTool.ts
-│   │   ├── GlobTool.ts
-│   │   ├── GrepTool.ts
-│   │   ├── ListDirTool.ts
-│   │   ├── NoteTool.ts
-│   │   └── TaskManageTool.ts # 自主规划与任务追踪
-│   ├── services/
-│   │   ├── api/              # LLM 适配层 (OpenAI 兼容)
-│   │   ├── compact/          # 上下文压缩服务
-│   │   ├── history/          # 会话管理 + Token 窗口
-│   │   ├── mcp/              # MCP 客户端管理器
-│   │   │   └── McpClientManager.ts
-│   │   ├── agent/            # Agent 状态机与规划
-│   │   │   └── planner.ts
-│   │   └── projectConfig.ts  # NEXUS.md 加载
-│   ├── security/
-│   │   ├── pathGuard.ts      # 路径安全 + 命令黑名单
-│   │   └── permissionStore.ts # 持久化权限 (跨会话 Always Allow)
-│   ├── types/
-│   │   └── index.ts          # 核心类型定义
-│   └── utils/                # 工具函数
-├── scripts/                  # 安装/卸载脚本
-│   ├── install.sh            # macOS/Linux 安装
-│   ├── install.ps1           # Windows 安装
-│   ├── uninstall.sh          # macOS/Linux 卸载
-│   └── uninstall.ps1         # Windows 卸载
-├── tests/                    # 测试套件
-├── assets/                   # 静态资源 (图标等)
-└── ARCHITECTURE.md           # 架构设计文档
+nexus                                    # 交互模式
+nexus "任务描述"                          # 一次性非交互模式
+nexus --version                          # 版本号
+nexus --dangerously-skip-permissions     # CI/CD 静默模式
+nexus update                             # 更新到最新版本
+nexus doctor                             # 运行环境诊断
 ```
 
 ## 配置
 
-配置文件位于 `~/.nexus/config.json`：
+配置文件位于 `~/.nexus/config.json`（Zod 运行时校验）：
 
 ```json
 {
+  "provider": "openai",
   "model": "gpt-4o",
   "baseUrl": "https://api.openai.com/v1",
   "apiKey": "sk-...",
@@ -284,63 +245,77 @@ nexus-agent/
 | `OPENAI_BASE_URL` | API 基础 URL | `https://api.openai.com/v1` |
 | `OPENAI_MODEL` | 默认模型 | `gpt-4o` |
 | `NEXUS_API_KEY` | 兼容的 API 密钥别名 | — |
+| `NEXUS_PROVIDER` | LLM 提供商 (`openai` / `ollama`) | `openai` |
+
+### 数据目录
+
+```
+~/.nexus/
+├── config.json          # 用户配置
+├── permissions.json     # 持久化权限
+├── memory.json          # 跨会话长效记忆
+├── sessions/            # 会话历史 (UUID 索引)
+│   ├── index.json       # 会话元数据索引
+│   └── <uuid>.json      # 独立会话文件
+└── skills/              # 可编程技能
+    └── <name>.json      # 技能定义
+```
+
+## 架构
+
+详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+
+```
+nexus-agent/
+├── src/
+│   ├── main.tsx              # 应用入口 + Ink UI + CLI 参数解析
+│   ├── QueryEngine.ts        # ReAct 引擎 (并行执行 + 超时 + 断路器)
+│   ├── Tool.ts               # 工具注册表 (Zod → OpenAI Schema)
+│   ├── context.ts            # System Prompt (Planner + Memory 注入)
+│   ├── config.ts             # 配置加载 (Zod 运行时校验)
+│   ├── commands/
+│   │   └── router.ts         # 命令路由 (/mcp /memory /skills /git...)
+│   ├── components/           # Ink (React) 终端 UI 组件
+│   ├── tools/                # 12 个内置工具
+│   │   ├── BashTool.ts       # Shell 命令执行
+│   │   ├── File*.ts          # 文件读写编辑
+│   │   ├── Glob/Grep/ListDir # 搜索与目录
+│   │   ├── NoteTool.ts       # 思考笔记
+│   │   ├── TaskManageTool.ts # 任务规划
+│   │   ├── WebFetchTool.ts   # URL 内容抓取
+│   │   ├── WebSearchTool.ts  # 互联网搜索
+│   │   └── NotebookEditTool  # Jupyter 编辑
+│   ├── services/
+│   │   ├── api/              # LLM 适配层 + 工厂模式
+│   │   ├── compact/          # 三层上下文压缩
+│   │   ├── history/          # Session (UUID) + Token 窗口
+│   │   ├── memory/           # 跨会话长效记忆
+│   │   ├── skills/           # 可编程技能管理
+│   │   ├── mcp/              # MCP 客户端管理器
+│   │   └── agent/            # Agent 状态机 (Planner)
+│   ├── security/             # 路径防护 + 权限持久化
+│   ├── types/                # 核心类型定义
+│   └── utils/                # 工具函数
+├── scripts/                  # 安装/卸载/构建脚本
+├── tests/                    # 59 个测试用例
+├── docs/                     # 项目文档
+│   ├── ARCHITECTURE.md       # 系统架构设计
+│   ├── CHANGELOG.md          # 变更日志
+│   └── CONTRIBUTING.md       # 贡献指南
+└── README.md
+```
 
 ## 开发
-
-### 环境搭建
 
 ```bash
 git clone https://github.com/guozongzhi/NexusAgent.git
 cd NexusAgent
 bun install
-```
 
-### 常用命令
-
-```bash
 bun run dev          # 启动开发模式
-bun test             # 运行测试套件
-bun run typecheck    # TypeScript 类型检查
-```
-
-### 测试
-
-```bash
-$ bun test
-
- 59 pass
- 0 fail
- 146 expect() calls
-Ran 59 tests across 4 files. [36ms]
-```
-
-测试覆盖：
-- `tests/core.test.ts` — 工具注册、函数定义、路径工具
-- `tests/security.test.ts` — 路径防护、命令黑名单、文件大小、敏感文件
-- `tests/compact.test.ts` — MicroCompact、Prompt 模板、Token 估算
-- `tests/tokenWindow.test.ts` — Token 估算、消息截断
-
-## 贡献指南
-
-详见 [CONTRIBUTING.md](./CONTRIBUTING.md)。
-
-1. Fork 本仓库
-2. 创建特性分支 (`git checkout -b feature/amazing-feature`)
-3. 提交变更 (`git commit -m 'feat: add amazing feature'`)
-4. 推送到分支 (`git push origin feature/amazing-feature`)
-5. 发起 Pull Request
-
-### 提交规范
-
-使用 [Conventional Commits](https://www.conventionalcommits.org/)：
-
-```
-feat:     新功能
-fix:      修复 Bug
-refactor: 重构（不改变功能）
-docs:     文档更新
-test:     测试更新
-chore:    构建/工具链更新
+bun test             # 运行测试 (59 pass / 162 expect)
+bun run typecheck    # TypeScript 严格模式检查
+bun run build        # 打包为独立二进制
 ```
 
 ## 技术栈
@@ -357,20 +332,25 @@ chore:    构建/工具链更新
 
 ## 路线图
 
-- [x] ReAct 查询引擎 + 流式输出
-- [x] 9 个核心工具 (含 task_manage)
-- [x] 三级权限 (safe / requires_confirm / dangerous) + Always Allow 持久化
+- [x] ReAct 查询引擎 + 流式输出 + 并行执行
+- [x] 12 个内置工具 (含 web_fetch / web_search / notebook_edit)
+- [x] 三级权限 + Always Allow 持久化 + CI/CD 静默模式
 - [x] 上下文压缩 (MicroCompact + Full Compact + Truncate)
-- [x] NEXUS.md 项目指令
+- [x] NEXUS.md 项目指令 + 层级化加载
 - [x] 跨平台安装 (macOS/Linux/Windows)
 - [x] MCP 协议支持 (动态外挂工具)
 - [x] Agent Planner (自主任务规划)
-- [x] QueryEngine 断路器 (连续错误熔断)
-- [ ] Session Memory (增量式记忆提取)
-- [ ] AgentTool (子代理分发)
-- [ ] IDE 集成 (VS Code / JetBrains)
-- [ ] `nexus init` 项目初始化
-- [ ] Git 工作流集成 (/commit, /diff)
+- [x] 断路器 + AbortController 中断
+- [x] 跨会话长效记忆 (/memory)
+- [x] 可编程技能系统 (/skills)
+- [x] Git 工作流 (/init /diff /commit)
+- [x] 成本追踪 (/cost)
+- [x] Zod 配置校验 + Session UUID
+- [x] NPM 标准化分发 + Bun compile 二进制
+- [ ] 流式 Markdown 实时渲染
+- [ ] 多 Agent 协同 (AgentTool + Coordinator)
+- [ ] LSP 语言服务集成
+- [ ] IDE 集成 (VS Code / JetBrains Bridge)
 
 ## 许可证
 

@@ -16,8 +16,8 @@
   },
   "files": [
     "src/**/*",
+    "docs/**/*",
     "README.md",
-    "ARCHITECTURE.md",
     "LICENSE"
   ],
   "scripts": {
