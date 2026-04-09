@@ -153,6 +153,7 @@ export interface LLMStreamParams {
   tools: OpenAIFunctionDef[];
   temperature?: number;
   maxTokens?: number;
+  abortSignal?: AbortSignal;
 }
 
 export interface LLMAdapter {

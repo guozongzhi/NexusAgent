@@ -5,7 +5,21 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { homedir } from 'node:os';
+import { z } from 'zod';
 import type { NexusConfig } from './types/index.ts';
+
+/** 配置文件的 Zod Schema — 运行时校验 */
+const NexusConfigFileSchema = z.object({
+  provider: z.enum(['openai', 'ollama']).optional(),
+  baseUrl: z.string().url().optional(),
+  apiKey: z.string().optional(),
+  model: z.string().optional(),
+  systemPrompt: z.string().optional(),
+  mcpServers: z.record(z.object({
+    command: z.string(),
+    args: z.array(z.string()),
+  })).optional(),
+}).strict();
 
 const DEFAULT_CONFIG: NexusConfig = {
   provider: 'openai',
@@ -27,9 +41,20 @@ export async function loadConfig(): Promise<NexusConfig> {
   const configPath = path.join(homedir(), '.nexus', 'config.json');
   try {
     const raw = await readFile(configPath, 'utf-8');
-    fileConfig = JSON.parse(raw) as Partial<NexusConfig>;
-  } catch {
-    // 配置文件不存在，使用默认值
+    const parsed = JSON.parse(raw);
+    // 运行时 Schema 校验
+    const result = NexusConfigFileSchema.safeParse(parsed);
+    if (!result.success) {
+      const issues = result.error.issues.map(i => `  - ${i.path.join('.')}: ${i.message}`).join('\n');
+      console.error(`[nexus] ⚠ 配置文件校验失败 (${configPath}):\n${issues}\n  将使用默认配置继续运行。`);
+    } else {
+      fileConfig = result.data as Partial<NexusConfig>;
+    }
+  } catch (err: any) {
+    if (err.code !== 'ENOENT') {
+      console.error(`[nexus] ⚠ 配置文件解析出错: ${err.message}`);
+    }
+    // 配置文件不存在或解析失败，使用默认值
   }
 
   return {

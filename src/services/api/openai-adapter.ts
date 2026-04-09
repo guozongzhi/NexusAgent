@@ -114,9 +114,15 @@ export class OpenAIAdapter implements LLMAdapter {
       }
 
       try {
-        // P1-3: 超时控制
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), OpenAIAdapter.STREAM_TIMEOUT_MS);
+        
+        if (params.abortSignal) {
+          params.abortSignal.addEventListener('abort', () => controller.abort());
+          if (params.abortSignal.aborted) {
+            controller.abort();
+          }
+        }
 
         const stream = await this.client.chat.completions.create({
           model: params.model,

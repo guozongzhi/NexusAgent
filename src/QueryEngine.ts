@@ -42,6 +42,8 @@ export interface QueryEngineParams {
   onToolApprovalRequest?: (name: string, input: Record<string, unknown>) => Promise<boolean>;
   /** 工具调用结束回调 */
   onToolEnd?: (name: string, result: string, isError: boolean) => void;
+  /** 中断信令 */
+  abortSignal?: AbortSignal;
 }
 
 /** 单次循环最大迭代次数（全自动模式下可能非常长） */
@@ -81,6 +83,7 @@ export class QueryEngine {
         systemPrompt,
         messages,
         tools: toolDefs,
+        abortSignal: params.abortSignal,
       })) {
         switch (event.type) {
           case 'text_delta':
@@ -140,121 +143,114 @@ export class QueryEngine {
       assistantContent.push(...toolCalls);
       messages.push({ role: 'assistant', content: assistantContent });
 
-      // 执行每个工具调用
+      // ═══ 并行工具执行 (Phase 1: 审批 → Phase 2: 并发执行) ═══
       const toolResults: ToolResultContentBlock[] = [];
       let currentTurnHasError = false;
-      
+
+      // Phase 1: 顺序收集权限审批（因为涉及用户交互必须串行）
+      type ApprovedTask = {
+        tc: ToolUseContentBlock;
+        kind: 'mcp' | 'local';
+        // MCP 专属
+        serverName?: string;
+        originalToolName?: string;
+        // 本地专属
+        tool?: ReturnType<typeof getTool>;
+        parsedInput?: unknown;
+      };
+      const approvedTasks: ApprovedTask[] = [];
+
       for (const tc of toolCalls) {
         onToolStart?.(tc.name, tc.input);
 
-        // -- MCP 工具分支 --
         if (tc.name.startsWith('mcp__')) {
-           const [_, serverName, ...toolParts] = tc.name.split('__');
-           const originalToolName = toolParts.join('__');
-           
-           if (onToolApprovalRequest) {
-             const approved = await onToolApprovalRequest(tc.name, tc.input);
-             if (!approved) {
-               const errResult: ToolResultContentBlock = {
-                 type: 'tool_result',
-                 tool_use_id: tc.id,
-                 content: `[ERROR] 用户拒绝了执行此外部 MCP 工具`,
-                 is_error: true,
-               };
-               toolResults.push(errResult);
-               onToolEnd?.(tc.name, errResult.content, true);
-               continue;
-             }
-           }
-           
-           try {
-              const res = await mcpManager.callTool(serverName!, originalToolName, tc.input);
-              const toolResult: ToolResultContentBlock = {
-                type: 'tool_result',
-                tool_use_id: tc.id,
-                content: res.output,
-                is_error: res.isError,
-              };
-              toolResults.push(toolResult);
-              onToolEnd?.(tc.name, res.output, res.isError ?? false);
-              if (res.isError) currentTurnHasError = true;
-           } catch(err) {
-              const msg = err instanceof Error ? err.message : String(err);
-              toolResults.push({ type: 'tool_result', tool_use_id: tc.id, content: `[ERROR] MCP Call failed: ${msg}`, is_error: true });
-              onToolEnd?.(tc.name, msg, true);
-              currentTurnHasError = true;
-           }
-           continue;
+          const [_, serverName, ...toolParts] = tc.name.split('__');
+          const originalToolName = toolParts.join('__');
+
+          if (onToolApprovalRequest) {
+            const approved = await onToolApprovalRequest(tc.name, tc.input);
+            if (!approved) {
+              toolResults.push({ type: 'tool_result', tool_use_id: tc.id, content: `[ERROR] 用户拒绝了执行此外部 MCP 工具`, is_error: true });
+              onToolEnd?.(tc.name, '[ERROR] 用户拒绝', true);
+              continue;
+            }
+          }
+          approvedTasks.push({ tc, kind: 'mcp', serverName, originalToolName });
+          continue;
         }
 
-        // -- 本地内置工具分支 --
+        // 本地工具
         const tool = getTool(tc.name);
         if (!tool) {
-          const errResult: ToolResultContentBlock = {
-            type: 'tool_result',
-            tool_use_id: tc.id,
-            content: `[ERROR] 未知工具: ${tc.name}`,
-            is_error: true,
-          };
-          toolResults.push(errResult);
-          onToolEnd?.(tc.name, errResult.content, true);
+          toolResults.push({ type: 'tool_result', tool_use_id: tc.id, content: `[ERROR] 未知工具: ${tc.name}`, is_error: true });
+          onToolEnd?.(tc.name, `[ERROR] 未知工具: ${tc.name}`, true);
           continue;
         }
 
         if (onToolApprovalRequest) {
           const approved = await onToolApprovalRequest(tc.name, tc.input);
           if (!approved) {
-            const errResult: ToolResultContentBlock = {
-              type: 'tool_result',
-              tool_use_id: tc.id,
-              content: `[ERROR] 用户拒绝了执行此工具`,
-              is_error: true,
-            };
-            toolResults.push(errResult);
-            onToolEnd?.(tc.name, errResult.content, true);
+            toolResults.push({ type: 'tool_result', tool_use_id: tc.id, content: `[ERROR] 用户拒绝了执行此工具`, is_error: true });
+            onToolEnd?.(tc.name, '[ERROR] 用户拒绝', true);
             continue;
           }
         }
 
-        try {
-          // 校验输入
-          const parsed = tool.inputSchema.safeParse(tc.input);
-          if (!parsed.success) {
-            const errResult: ToolResultContentBlock = {
-              type: 'tool_result',
-              tool_use_id: tc.id,
-              content: `[ERROR] 参数校验失败: ${parsed.error.message}`,
-              is_error: true,
-            };
-            toolResults.push(errResult);
-            onToolEnd?.(tc.name, errResult.content, true);
-            currentTurnHasError = true;
-            continue;
-          }
-
-          const result = await tool.call(parsed.data, toolContext);
-          const toolResult: ToolResultContentBlock = {
-            type: 'tool_result',
-            tool_use_id: tc.id,
-            content: result.output,
-            is_error: result.isError,
-          };
-          toolResults.push(toolResult);
-          onToolEnd?.(tc.name, result.output, result.isError ?? false);
-          if (result.isError) {
-             currentTurnHasError = true;
-          }
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          const errResult: ToolResultContentBlock = {
-            type: 'tool_result',
-            tool_use_id: tc.id,
-            content: `[ERROR] 工具执行异常: ${msg}`,
-            is_error: true,
-          };
-          toolResults.push(errResult);
-          onToolEnd?.(tc.name, errResult.content, true);
+        // 预校验输入
+        const parsed = tool.inputSchema.safeParse(tc.input);
+        if (!parsed.success) {
+          toolResults.push({ type: 'tool_result', tool_use_id: tc.id, content: `[ERROR] 参数校验失败: ${parsed.error.message}`, is_error: true });
+          onToolEnd?.(tc.name, `[ERROR] 参数校验失败`, true);
           currentTurnHasError = true;
+          continue;
+        }
+        approvedTasks.push({ tc, kind: 'local', tool, parsedInput: parsed.data });
+      }
+
+      // Phase 2: 对已批准的任务并发执行（附带统一超时保护）
+      const TOOL_TIMEOUT_MS = 60_000; // 单工具最大执行时间 60s
+      if (approvedTasks.length > 0) {
+        const execPromises = approvedTasks.map(async (task): Promise<ToolResultContentBlock> => {
+          const { tc } = task;
+          try {
+            // 统一超时包裹
+            const timeoutPromise = new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error(`工具 ${tc.name} 执行超时 (${TOOL_TIMEOUT_MS / 1000}s)`)), TOOL_TIMEOUT_MS)
+            );
+
+            let execPromise: Promise<ToolResultContentBlock>;
+            if (task.kind === 'mcp') {
+              execPromise = mcpManager.callTool(task.serverName!, task.originalToolName!, tc.input).then(res => {
+                onToolEnd?.(tc.name, res.output, res.isError ?? false);
+                if (res.isError) currentTurnHasError = true;
+                return { type: 'tool_result' as const, tool_use_id: tc.id, content: res.output, is_error: res.isError };
+              });
+            } else {
+              execPromise = task.tool!.call(task.parsedInput, toolContext).then(result => {
+                onToolEnd?.(tc.name, result.output, result.isError ?? false);
+                if (result.isError) currentTurnHasError = true;
+                return { type: 'tool_result' as const, tool_use_id: tc.id, content: result.output, is_error: result.isError };
+              });
+            }
+
+            return await Promise.race([execPromise, timeoutPromise]);
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            onToolEnd?.(tc.name, `[ERROR] ${msg}`, true);
+            currentTurnHasError = true;
+            return { type: 'tool_result', tool_use_id: tc.id, content: `[ERROR] 工具执行异常: ${msg}`, is_error: true };
+          }
+        });
+
+        const settled = await Promise.allSettled(execPromises);
+        for (const result of settled) {
+          if (result.status === 'fulfilled') {
+            toolResults.push(result.value);
+          } else {
+            // Promise 自身 reject（不太可能，因为内部已 try-catch）
+            toolResults.push({ type: 'tool_result', tool_use_id: 'unknown', content: `[ERROR] ${result.reason}`, is_error: true });
+            currentTurnHasError = true;
+          }
         }
       }
 

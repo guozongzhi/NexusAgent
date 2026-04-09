@@ -8,7 +8,7 @@
  * - 活跃区域: 仅流式文本 + spinner + 输入框 + 状态栏（3-5行）
  */
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { render, Box, Text, Static, useApp } from 'ink';
+import { render, Box, Text, Static, useApp, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 import { program } from 'commander';
 import chalk from 'chalk';
@@ -23,10 +23,12 @@ import { NexusSpinner } from './components/Spinner.tsx';
 // 核心逻辑
 import { QueryEngine } from './QueryEngine.ts';
 import { loadSession, saveSession } from './services/history/sessionStore.ts';
+import { getCurrentSessionId } from './services/history/sessionStore.ts';
 import { loadConfig } from './config.ts';
 import { parseAndRouteCommand } from './commands/router.ts';
 import { OpenAIAdapter } from './services/api/openai-adapter.ts';
-import type { Message, ToolUseContext } from './types/index.ts';
+import { createAdapter } from './services/api/adapterFactory.ts';
+import type { Message, ToolUseContext, LLMAdapter } from './types/index.ts';
 import { renderMarkdown } from './utils/markdown.ts';
 import { buildSystemPrompt, buildSystemPromptAsync } from './context.ts';
 import { getAllFunctionDefs, getTool } from './tools/index.ts';
@@ -38,7 +40,7 @@ import { padToTermWidth } from './utils/path.ts';
 import { isToolAutoApproved, addAutoApprovedTool } from './security/permissionStore.ts';
 import { mcpManager } from './services/mcp/McpClientManager.ts';
 
-const NEXUS_VERSION = '0.1.0';
+const NEXUS_VERSION = '0.3.0';
 export const READ_ONLY_TOOLS = ['file_read', 'list_dir', 'search', 'grep', 'glob', 'note'];
 
 // ─── 类型 ──────────────────────────────────────────────
@@ -106,7 +108,7 @@ function StaticMessageBlock({ item }: { item: CompletedMessage }) {
 
 // ─── 主应用 ────────────────────────────────────────────
 
-function NexusApp({ oneShotQuery }: { oneShotQuery?: string }) {
+function NexusApp({ oneShotQuery, skipPermissions }: { oneShotQuery?: string; skipPermissions?: boolean }) {
   const { exit } = useApp();
   const cwd = process.cwd();
 
@@ -136,12 +138,13 @@ function NexusApp({ oneShotQuery }: { oneShotQuery?: string }) {
   // 移除 autoApprovedToolsRef，使用持久化存储
 
   const engineRef = useRef<QueryEngine | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   // 完整消息历史（传给 LLM）
   const historyRef = useRef<Message[]>([]);
   // AutoCompact 状态
   const autoCompactStateRef = useRef(createAutoCompactState());
   // LLM 适配器引用（compact 需要直接调用）
-  const adapterRef = useRef<import('./services/api/openai-adapter.ts').OpenAIAdapter | null>(null);
+  const adapterRef = useRef<LLMAdapter | null>(null);
 
   // 流式文本节流缓冲
   const streamBufferRef = useRef('');
@@ -156,6 +159,25 @@ function NexusApp({ oneShotQuery }: { oneShotQuery?: string }) {
     }
   }, []);
 
+  // ─── 热键监听（Ctrl+C 中断/退出） ───────────────────────
+  useInput((input, key) => {
+    // 处理 Ctrl+C
+    if (key.ctrl && input === 'c') {
+      if (isProcessing && abortControllerRef.current) {
+        // 请求进行中：发送 abort 信号
+        setCompletedMessages(prev => [
+          ...prev,
+          { id: nextMsgId(), role: 'system', content: '[WARNING] 用户已中断当前操作。' }
+        ]);
+        abortControllerRef.current.abort();
+      } else {
+        // 没有运行中请求：直接退出应用
+        exit();
+        process.exit(0);
+      }
+    }
+  });
+
   // ─── 初始化 ──────────────────────────────────────────
 
   useEffect(() => {
@@ -164,7 +186,7 @@ function NexusApp({ oneShotQuery }: { oneShotQuery?: string }) {
       const apiKey = conf.apiKey || process.env.OPENAI_API_KEY || 'UNSET_KEY_WAITING_FOR_USER';
       const baseURL = conf.baseUrl || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
 
-      const adapter = new OpenAIAdapter(baseURL, apiKey);
+      const adapter = createAdapter(conf);
       adapterRef.current = adapter;
       engineRef.current = new QueryEngine(adapter);
 
@@ -203,12 +225,22 @@ function NexusApp({ oneShotQuery }: { oneShotQuery?: string }) {
     };
     init();
 
-    // P2-5: cleanup — 清理所有 timer 防止内存泄漏
+    // P2-5: cleanup — 清理所有 timer 防止内存泄漏 + 优雅关闭
+    const shutdownHandler = () => {
+      mcpManager.closeAll().catch(() => {});
+    };
+    process.on('exit', shutdownHandler);
+    process.on('SIGINT', shutdownHandler);
+    process.on('SIGTERM', shutdownHandler);
+
     return () => {
       if (streamFlushRef.current) {
         clearTimeout(streamFlushRef.current);
         streamFlushRef.current = null;
       }
+      process.removeListener('exit', shutdownHandler);
+      process.removeListener('SIGINT', shutdownHandler);
+      process.removeListener('SIGTERM', shutdownHandler);
     };
   }, []);
 
@@ -224,21 +256,29 @@ function NexusApp({ oneShotQuery }: { oneShotQuery?: string }) {
   // ─── 提交处理 ────────────────────────────────────────
 
   const handleSubmit = async (value: string) => {
-    if (!value.trim() || isProcessing || pendingApproval) return;
+    let query = value;
+    if (!query.trim() || isProcessing || pendingApproval) return;
 
+    let resp: any;
     // 斜杠命令
-    if (value.startsWith('/')) {
-      const resp = await parseAndRouteCommand(value, {
+    if (query.startsWith('/')) {
+      resp = await parseAndRouteCommand(query, {
         exit,
         clear: () => setCompletedMessages([]),
         reloadConfig: async () => {
           const newConf = await loadConfig();
           const newKey = newConf.apiKey || process.env.OPENAI_API_KEY || 'UNSET_KEY_WAITING_FOR_USER';
           const newBase = newConf.baseUrl || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
-          const newAdapter = new OpenAIAdapter(newBase, newKey);
+          const newAdapter = createAdapter(newConf);
           engineRef.current = new QueryEngine(newAdapter);
           const actualModel = newConf.model || process.env.OPENAI_MODEL || 'gpt-4o';
           setModelName(actualModel);
+
+          // #6: 配置热重载时重连 MCP 服务器
+          if (newConf.mcpServers) {
+            await mcpManager.closeAll();
+            await mcpManager.connectAll(newConf.mcpServers);
+          }
 
           setCompletedMessages(prev => [
             ...prev,
@@ -255,40 +295,64 @@ function NexusApp({ oneShotQuery }: { oneShotQuery?: string }) {
         getModel: () => modelName,
       });
 
-      setCompletedMessages(prev => [
-        ...prev,
-        { id: nextMsgId(), role: 'user', content: value },
-        { id: nextMsgId(), role: 'system', content: resp.output || '' },
-      ]);
-      setInputValue('');
-      return;
+      if (resp.rewrittenQuery) {
+        // 如果命令解析器返回了重写后的查询（例如执行技能），则截取原命令到历史，查询转入 LLM
+        setCompletedMessages(prev => [
+          ...prev,
+          { id: nextMsgId(), role: 'user', content: query },
+          { id: nextMsgId(), role: 'system', content: `已触发技能，引擎转入自动化工作流。` },
+        ]);
+        query = resp.rewrittenQuery;
+        setInputValue('');
+        // Fallthrough 至后续的 LLM 处理...
+      } else {
+        setCompletedMessages(prev => [
+          ...prev,
+          { id: nextMsgId(), role: 'user', content: query },
+          { id: nextMsgId(), role: 'system', content: resp.output || '' },
+        ]);
+        setInputValue('');
+        return;
+      }
     }
 
     // 正常消息
-    setInputValue('');
-
-    // 用户消息立即沉淀到 Static
-    setCompletedMessages(prev => [
-      ...prev,
-      { id: nextMsgId(), role: 'user', content: value },
-    ]);
+    if (!resp?.rewrittenQuery && !query.startsWith('/')) {
+      setInputValue('');
+      setCompletedMessages(prev => [
+        ...prev,
+        { id: nextMsgId(), role: 'user', content: query },
+      ]);
+    }
 
     setIsProcessing(true);
     setSpinnerMode('thinking');
     setToolExecutions([]);
     setStreamingText('');
-    // P2-3: 重置首 token 标记
     isFirstChunkRef.current = true;
+    abortControllerRef.current = new AbortController();
 
     try {
-      if (!engineRef.current) throw new Error('Engine not initialized');
+      if (!engineRef.current) throw new Error('Engine not initialized. 请运行 /config set apiKey <your-key> 配置 API Key。');
 
       // P0-2: 使用 context.ts 的完整 System Prompt（含 NEXUS.md 项目指令）
-      const sysPrompt = await buildSystemPromptAsync(cwd);
-      const conf = await loadConfig();
+      let sysPrompt: string;
+      try {
+        sysPrompt = await buildSystemPromptAsync(cwd);
+      } catch (promptErr: any) {
+        sysPrompt = buildSystemPrompt(cwd); // 降级为同步版本
+        setCompletedMessages(prev => [...prev, { id: nextMsgId(), role: 'system', content: `⚠ System Prompt 构建异常 (${promptErr.message})，已降级处理。` }]);
+      }
+
+      let conf;
+      try {
+        conf = await loadConfig();
+      } catch (confErr: any) {
+        throw new Error(`配置加载失败: ${confErr.message}。请检查 ~/.nexus/config.json 格式是否正确。`);
+      }
 
       // 构建 LLM 消息
-      historyRef.current.push({ role: 'user', content: value });
+      historyRef.current.push({ role: 'user', content: query });
 
       // P1-4: 智能上下文压缩（替代简单截断）
       const actualModel = conf.model || process.env.OPENAI_MODEL || 'gpt-4o';
@@ -339,7 +403,12 @@ function NexusApp({ oneShotQuery }: { oneShotQuery?: string }) {
         model: actualModel,
         messages: trimmedMessages,
         toolDefs,
-        toolContext: { cwd } as ToolUseContext,
+        toolContext: {
+          cwd,
+          sessionId: getCurrentSessionId(),
+          isAuthorized: skipPermissions ?? false,
+        } as ToolUseContext,
+        abortSignal: abortControllerRef.current.signal,
         onTextDelta: (delta: string) => {
           streamBufferRef.current += delta;
           // P2-3: 首 token 立即刷新（降低 TTFT 感知延迟），后续 50ms 节流
@@ -368,6 +437,11 @@ function NexusApp({ oneShotQuery }: { oneShotQuery?: string }) {
           );
         },
         onToolApprovalRequest: async (toolName: string, args: any) => {
+          // P4-1: 静默模式 — 跳过所有权限确认
+          if (skipPermissions) {
+            return true;
+          }
+
           const toolInstance = getTool(toolName);
           const isMcp = toolName.startsWith('mcp__');
           const rawAuth = isMcp ? 'requires_confirm' : (toolInstance?.authType || (toolInstance?.isReadOnly ? 'safe' : 'requires_confirm'));
@@ -412,10 +486,14 @@ function NexusApp({ oneShotQuery }: { oneShotQuery?: string }) {
         setTokenCount(prev => prev + response.usage.promptTokens + response.usage.completionTokens);
       }
     } catch (err: any) {
-      setCompletedMessages(prev => [
-        ...prev,
-        { id: nextMsgId(), role: 'system', content: `执行出错: ${err.message}` },
-      ]);
+      if (err.name === 'AbortError' || err.message.includes('abort')) {
+        // 忽略中止错误
+      } else {
+        setCompletedMessages(prev => [
+          ...prev,
+          { id: nextMsgId(), role: 'system', content: `执行出错: ${err.message}` },
+        ]);
+      }
     } finally {
       // 清理流式状态
       if (streamFlushRef.current) {
@@ -527,17 +605,23 @@ program
   .name('nexus')
   .description('Nexus Agent - 强大的终端智能化生产力平台')
   .version(NEXUS_VERSION)
+  .option('--dangerously-skip-permissions', '跳过所有工具权限确认（用于 CI/CD 或自动化流水线）')
   .argument('[query...]', '一次性任务描述（非交互模式）')
-  .action(async (queryArray) => {
+  .action(async (queryArray, opts) => {
     const oneShotQuery = queryArray?.join(' ');
+    const skipPermissions = !!opts.dangerouslySkipPermissions;
     const cwd = process.cwd();
     const conf = await loadConfig();
 
     // Welcome banner 直出 stdout，不进 Ink
     printWelcome(NEXUS_VERSION, cwd, conf.model || 'active');
 
-    // Ink 只管动态区域
-    render(<NexusApp oneShotQuery={oneShotQuery} />);
+    if (skipPermissions) {
+      console.log(chalk.bgYellow.black(' ⚠ WARNING ') + chalk.yellow(' --dangerously-skip-permissions 已启用，所有工具权限确认将被跳过！'));
+    }
+
+    // Ink 只管动态区域，禁用默认的 exitOnCtrlC，由我们自行处理
+    render(<NexusApp oneShotQuery={oneShotQuery} skipPermissions={skipPermissions} />, { exitOnCtrlC: false });
   });
 
 program.parse(process.argv);
