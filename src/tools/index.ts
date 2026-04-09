@@ -18,5 +18,12 @@ import './ListDirTool.ts';
 import './NoteTool.ts';
 import './TaskManageTool.ts';
 
+// Phase 4 网络与扩展工具
+import './WebFetchTool.ts';
+import './WebSearchTool.ts';
+
+// Phase 5 生态扩展
+import './NotebookEditTool.ts';
+
 // 从注册表重新导出
 export { getAllTools, getTool, getAllFunctionDefs } from '../Tool.ts';

@@ -5,6 +5,7 @@
  */
 import { getProjectInstructions } from './services/projectConfig.ts';
 import { plannerState } from './services/agent/planner.ts';
+import { getRelevantMemories } from './services/memory/memoryStore.ts';
 import os from 'node:os';
 
 /** 运行时检测操作系统 */
@@ -34,8 +35,11 @@ export async function buildSystemPromptAsync(cwd: string): Promise<string> {
   const base = buildSystemPrompt(cwd);
   const projectInstructions = await getProjectInstructions(cwd);
 
+  let finalPrompt = base;
+
+  // 注入项目指令
   if (projectInstructions) {
-    return `${base}
+    finalPrompt += `
 
 ## 项目指令
 
@@ -43,7 +47,20 @@ export async function buildSystemPromptAsync(cwd: string): Promise<string> {
 
 ${projectInstructions}`;
   }
-  return base;
+
+  // 注入跨会话长效记忆
+  const memories = await getRelevantMemories(cwd);
+  if (memories.length > 0) {
+    const memoryBlocks = memories.map(m => `- [${new Date(m.createdAt).toLocaleString()}] ${m.snippet}`).join('\n');
+    finalPrompt += `
+
+## <LONG_TERM_MEMORY> 长效记忆
+以下是属于该会话/目录相关的跨会话持久化记忆，请在解决问题时优先参考并应用这些知识：
+${memoryBlocks}
+</LONG_TERM_MEMORY>`;
+  }
+
+  return finalPrompt;
 }
 
 /**
@@ -71,6 +88,9 @@ export function buildSystemPrompt(cwd: string): string {
 - **glob**: 按 glob 模式搜索文件路径
 - **grep**: 按正则表达式全局搜索文件内容
 - **note**: 记录思考笔记（不执行任何操作，用于规划和推理）
+- **web_fetch**: 获取指定 URL 的内容（网页、API 响应等）
+- **web_search**: 在互联网上搜索信息（基于 DuckDuckGo）
+- **notebook_edit**: 结构化编辑 Jupyter Notebook (.ipynb) 文件（按 cell 索引增删查改）
 
 ## 行为准则
 1. **直接解决问题**：当用户提出需求时，直接使用工具操作，而不是给出指导让用户自己去做
