@@ -1,16 +1,31 @@
 {
   "name": "nexus-agent",
-  "version": "0.1.0",
-  "description": "Nexus Agent - 基于 ReAct 范式的本地 CLI Agent",
+  "version": "0.3.0",
+  "description": "Nexus Agent — 基于 ReAct 范式的自主编程 CLI Agent",
   "type": "module",
-  "private": true,
+  "private": false,
+  "license": "MIT",
+  "author": "guozongzhi",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/guozongzhi/NexusAgent.git"
+  },
+  "keywords": ["ai", "agent", "cli", "react", "mcp", "coding-assistant", "llm"],
   "bin": {
     "nexus": "./src/main.tsx"
   },
+  "files": [
+    "src/**/*",
+    "README.md",
+    "ARCHITECTURE.md",
+    "LICENSE"
+  ],
   "scripts": {
     "dev": "bun run src/main.tsx",
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "build": "bun run scripts/build.ts",
+    "prepublishOnly": "bun run typecheck && bun test"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

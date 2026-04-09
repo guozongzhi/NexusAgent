@@ -30,33 +30,40 @@
 │                      main.tsx (App)                           │
 │                                                               │
 │  handleSubmit() ──► 命令路由 ──► CommandRouter                │
-│       │                              ├─ /mcp (MCP 管理)      │
-│       │                              └─ /config,/compact...   │
+│       │                    ├─ /mcp (MCP 管理)                │
+│       │                    ├─ /memory (长效记忆)              │
+│       │                    ├─ /skills, /sk (技能系统)         │
+│       │                    ├─ /commit, /diff, /init (Git)    │
+│       │                    └─ /config, /compact, /cost...    │
 │       ▼                                                       │
 │  buildSystemPromptAsync() ──► context.ts + planner + NEXUS.md│
+│       │                       + Long-term Memory 注入        │
 │       │                                                       │
 │  autoCompactIfNeeded() ──► compact/ (MicroCompact + Full)    │
 │       │                                                       │
 │  MCP Tool Merge ──► local tools + mcpManager.getAllTools()    │
 │       │                                                       │
-│  QueryEngine.run() ──► ReAct 循环 + 断路器                    │
+│  QueryEngine.run() ──► ReAct 循环 + 断路器 + 60s 超时保护    │
 └────────────────────────────┬─────────────────────────────────┘
                              │
     ┌────────────────────────┼────────────────────────┐
     ▼                        ▼                        ▼
 ┌──────────────┐  ┌───────────────────┐  ┌────────────────────┐
 │ LLM Adapter  │  │  Tool Registry    │  │  Security Layer    │
-│              │  │                   │  │                    │
-│ OpenAIAdapter│  │  bash             │  │  validatePath()    │
-│ (OpenAI SDK) │  │  file_read/write  │  │  validateCommand() │
-│              │  │  file_edit        │  │  validateWriteSize │
-│ stream()     │  │  list_dir/glob    │  │  validateSensitive │
-│              │  │  grep / note      │  │                    │
-│ 支持:        │  │  task_manage      │  │  permissionStore   │
-│ · OpenAI     │  │  ─────────────    │  │  (持久化权限)      │
-│ · Ollama     │  │  mcp__* (动态)    │  │                    │
-│ · vLLM       │  │                   │  │  pathGuard         │
-│ · LiteLLM    │  │  registerTool()   │  │  (路径+命令校验)   │
+│              │  │  (12 tools)       │  │                    │
+│ adapterFact- │  │                   │  │  validatePath()    │
+│ ory.ts 工厂  │  │  bash             │  │  validateCommand() │
+│              │  │  file_read/write  │  │  validateWriteSize │
+│ createAdapt- │  │  file_edit        │  │  validateSensitive │
+│ er(config)   │  │  list_dir/glob    │  │                    │
+│              │  │  grep / note      │  │  permissionStore   │
+│ 支持:        │  │  task_manage      │  │  (持久化权限)      │
+│ · OpenAI     │  │  web_fetch        │  │                    │
+│ · Ollama     │  │  web_search       │  │  pathGuard         │
+│ · vLLM       │  │  notebook_edit    │  │  (路径+命令校验)   │
+│ · LiteLLM    │  │  ─────────────    │  │                    │
+│              │  │  mcp__* (动态)    │  │  --dangerously-    │
+│              │  │  registerTool()   │  │  skip-permissions  │
 └──────────────┘  └───────────────────┘  └────────────────────┘
                              │
               ┌──────────────▼──────────────┐
@@ -84,8 +91,11 @@ ReAct 查询引擎，负责 LLM 交互循环：
 
 关键设计：
 - 单次 `run()` 调用最多触发 100 轮 tool_call 循环（支持大规模自动任务）
+- 同一 turn 多个 tool_call 并发执行（`Promise.allSettled`），审批串行
+- 每个工具调用附带 60 秒统一超时保护（`Promise.race`）
 - MCP 工具以 `mcp__<server>__<tool>` 前缀标识，单独路由到外部进程
 - `consecutiveErrors` 计数器防止死循环吞噬 token
+- `AbortController` 支持用户 Ctrl+C 中断整个 ReAct 链路
 
 ### 2. Tool 系统 (`src/Tool.ts` + `src/tools/`)
 
@@ -186,16 +196,40 @@ Agent 状态机与任务管理：
 
 ```
 优先级: 命令行参数 > 环境变量 > ~/.nexus/config.json > 默认值
+Schema: Zod 运行时校验（NexusConfigFileSchema.strict()）
 
 ~/.nexus/
-├── config.json          # 用户配置 (含 mcpServers)
+├── config.json          # 用户配置 (含 mcpServers)，Zod 运行时校验
 ├── permissions.json     # 持久化权限 (Always Allow)
-└── sessions/            # 会话历史
-    └── <hash>.json
+├── memory.json          # 跨会话长效记忆
+├── sessions/            # 会话历史（UUID 索引）
+│   ├── index.json       # 会话元数据索引 (cwd, createdAt, lastActive)
+│   └── <uuid>.json      # 独立会话文件
+└── skills/              # 可编程技能配置
+    └── <name>.json      # 技能定义 (name, description, prompt)
 
 项目级:
 └── NEXUS.md             # 项目 AI 行为规范
 ```
+
+### 8. 长效记忆系统 (`src/services/memory/`)
+
+- `memoryStore.ts` 管理 `~/.nexus/memory.json` 持久化存储
+- 支持 `global` 和 `project` 两种作用域
+- `buildSystemPromptAsync()` 在每次 Query 前自动注入相关记忆到 `<LONG_TERM_MEMORY>` 标签
+- `/memory add|rm|list|clear|global` 命令行管理
+
+### 9. 技能系统 (`src/services/skills/`)
+
+- `skillManager.ts` 解析 `~/.nexus/skills/` 目录下的 JSON 技能文件
+- `/skills list|add|rm` + `/sk <name>` 快捷执行
+- 通过 `rewrittenQuery` 机制将技能 prompt 重定向到 QueryEngine
+
+### 10. LLM 适配器工厂 (`src/services/api/adapterFactory.ts`)
+
+- `createAdapter(config)` 根据 `provider` 字段分派适配器实例
+- `ollama` 自动修正 baseURL 为 `localhost:11434/v1`
+- 保证多供应商路由真正工作，而不是声明式空挂
 
 ## 扩展指南
 
@@ -221,11 +255,28 @@ Agent 状态机与任务管理：
 
 ### 支持新的 LLM 提供商
 
-实现 `LLMAdapter` 接口：
+实现 `LLMAdapter` 接口，并在 `adapterFactory.ts` 中注册分派逻辑：
 
 ```typescript
 interface LLMAdapter {
   name: string;
-  stream(params: LLMStreamParams): AsyncGenerator<StreamEvent>;
+  stream(params: LLMStreamParams): AsyncIterable<StreamEvent>;
 }
+```
+
+### CLI 参数
+
+```bash
+nexus                              # 交互模式
+nexus "你的任务描述"                # 一次性非交互模式
+nexus --dangerously-skip-permissions  # CI/CD 静默模式（跳过所有权限确认）
+```
+
+### 构建与分发
+
+```bash
+bun run build         # 使用 Bun compile 打包为独立二进制
+bun run typecheck     # TypeScript 严格模式检查
+bun test              # 59 个测试用例
+npm publish           # 发布到 npm (需先 npm login)
 ```

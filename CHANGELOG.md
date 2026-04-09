@@ -5,6 +5,51 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/)，
 版本号遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.3.0] - 2026-04-10
+
+### 新增 — 功能扩展
+
+- **网络获取能力** — `WebFetchTool` (HTML/JSON 抓取) + `WebSearchTool` (DuckDuckGo 搜索)
+- **Jupyter 编辑** — `NotebookEditTool` 提供按 cell 索引的结构化 `.ipynb` CRUD 操作
+- **长效记忆系统** — `memoryStore.ts` 管理 `~/.nexus/memory.json`，自动注入 System Prompt
+  - `/memory add|rm|list|clear|global` 命令支持
+- **可编程技能** — `skillManager.ts` + `~/.nexus/skills/*.json` 工作流配置
+  - `/skills list|add|rm` + `/sk <name>` 快捷执行
+  - `rewrittenQuery` 机制将技能 prompt 无缝重定向到 QueryEngine
+- **Git 工作流命令** — `/init` (NEXUS.md 初始化) / `/diff` (Git 状态) / `/commit` (提交辅助)
+- **成本追踪** — `/cost` 命令基于 Token 用量进行财务估算
+- **CI/CD 静默模式** — `--dangerously-skip-permissions` CLI 标志，跳过所有工具权限确认
+- **NPM 分发准备** — `package.json` 标准化 (`private: false`)，`scripts/build.ts` Bun compile 二进制构建
+
+### 新增 — 架构加固
+
+- **配置 Schema 验证** — Zod `NexusConfigFileSchema.strict()` + `safeParse()` 运行时校验
+  - 校验失败打印逐字段错误信息，降级为默认配置继续运行
+- **Session 生命周期** — UUID v4 会话 ID + `index.json` 元数据索引
+  - `listSessions()` / `resumeSession()` API（为 `/resume` 命令准备）
+  - 向后兼容旧格式（cwd hash 单文件）的自动迁移读取
+- **进程退出资源释放** — `process.on(exit/SIGINT/SIGTERM)` → `mcpManager.closeAll()` 优雅关闭
+- **LLM 适配器工厂** — `createAdapter(config)` 根据 `provider` 路由，Ollama 自动修正 baseURL
+- **统一工具超时** — 全部 12 个工具附带 60s `Promise.race` 超时保护
+- **配置热重载** — `/config set` 后自动重连 MCP 服务器
+- **ToolUseContext 完整填充** — `sessionId` + `isAuthorized` 字段
+- **分层错误边界** — `buildSystemPromptAsync` 降级 + `loadConfig` 独立捕获 + 针对性修复提示
+- **并行工具执行** — 同一 turn 多 tool_call 通过 `Promise.allSettled` 并发
+- **AbortController** — Ctrl+C 全链路中断支持
+
+### 变更
+
+- 版本号升级至 `0.3.0`
+- `package.json` 新增 `author`, `license`, `repository`, `keywords`, `files`, `build`, `prepublishOnly`
+- `adapterRef` 类型从 `OpenAIAdapter` 改为抽象 `LLMAdapter` 接口
+- 工具总数从 9 → 12（新增 web_fetch, web_search, notebook_edit）
+- Session 存储从 `session_<hash>.json` 单文件改为 `<uuid>.json` + 索引
+
+### 测试
+
+- 59 个测试用例 / 162 个断言，全部通过
+- `tsc --noEmit` 零错误
+
 ## [0.2.0] - 2026-04-09
 
 ### 新增

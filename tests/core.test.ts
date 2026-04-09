@@ -8,9 +8,9 @@ import { shortenPath, formatTokens } from '../src/utils/path.ts';
 import { buildSystemPrompt } from '../src/context.ts';
 
 describe('工具注册表', () => {
-  test('所有 8 个工具应该被注册', () => {
+  test('所有 12 个工具应该被注册', () => {
     const tools = getAllTools();
-    expect(tools.length).toBe(8);
+    expect(tools.length).toBe(12);
   });
 
   test('工具查找正确', () => {
@@ -30,7 +30,7 @@ describe('工具注册表', () => {
 
   test('getAllFunctionDefs 返回正确的 OpenAI 格式', () => {
     const defs = getAllFunctionDefs();
-    expect(defs.length).toBe(8);
+    expect(defs.length).toBe(12);
 
     for (const def of defs) {
       expect(def.type).toBe('function');
@@ -45,10 +45,10 @@ describe('工具注册表', () => {
     const readOnlyTools = tools.filter(t => t.isReadOnly);
     const writeTools = tools.filter(t => !t.isReadOnly);
     
-    // file_read, glob, grep, list_dir, note 是只读
-    expect(readOnlyTools.length).toBe(5);
-    // bash, file_write, file_edit 是写入
-    expect(writeTools.length).toBe(3);
+    // file_read, glob, grep, list_dir, note, web_fetch, web_search 是只读
+    expect(readOnlyTools.length).toBe(7);
+    // bash, file_write, file_edit, task_manage, notebook_edit 是写入
+    expect(writeTools.length).toBe(5);
   });
 });
 
