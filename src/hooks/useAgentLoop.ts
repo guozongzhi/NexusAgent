@@ -353,6 +353,14 @@ export function useAgentLoop({
             });
           });
         },
+        onRetry: (attempt: number, maxRetries: number, delayMs: number, error: string) => {
+          agentState.setState({
+            completedMessages: appendSystemMessage(
+              agentState.getState().completedMessages,
+              `⚠ [API 请求失败] 正在重试 (${attempt}/${maxRetries})... 延时 ${delayMs}ms\n原因: ${error}`
+            ),
+          });
+        },
       });
 
       // 完成处理

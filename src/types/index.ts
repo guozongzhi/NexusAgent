@@ -97,13 +97,23 @@ export interface StreamEventThinkingDelta {
   text: string;
 }
 
+/** 重试提示事件 */
+export interface StreamEventRetry {
+  type: 'retry';
+  attempt: number;
+  maxRetries: number;
+  delayMs: number;
+  error: string;
+}
+
 export type StreamEvent =
   | StreamEventTextDelta
   | StreamEventToolUse
   | StreamEventDone
   | StreamEventError
   | StreamEventUsage
-  | StreamEventThinkingDelta;
+  | StreamEventThinkingDelta
+  | StreamEventRetry;
 
 // ============================================================
 // Tool 系统

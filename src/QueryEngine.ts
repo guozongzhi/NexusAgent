@@ -46,6 +46,8 @@ export interface QueryEngineParams {
   onToolEnd?: (name: string, result: string, isError: boolean, durationMs: number) => void;
   /** 中断信令 */
   abortSignal?: AbortSignal;
+  /** 重试回调 */
+  onRetry?: (attempt: number, maxRetries: number, delayMs: number, error: string) => void;
 }
 
 /** 单次循环最大迭代次数 */
@@ -67,6 +69,7 @@ export class QueryEngine {
     const {
       systemPrompt, model, messages, toolDefs, toolContext,
       toolRouter, onTextDelta, onThinking, onToolStart, onToolApprovalRequest, onToolEnd,
+      onRetry,
     } = params;
 
     let iterations = 0;
@@ -118,6 +121,10 @@ export class QueryEngine {
               text: `[LLM Error] ${event.error}`,
               usage: { promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens },
             };
+
+          case 'retry':
+            onRetry?.(event.attempt, event.maxRetries, event.delayMs, event.error);
+            break;
         }
       }
 

@@ -110,6 +110,14 @@ export class OpenAIAdapter implements LLMAdapter {
       // 非首次尝试时等待指数退避
       if (attempt > 0) {
         const delay = OpenAIAdapter.BASE_DELAY_MS * Math.pow(2, attempt - 1);
+        const msg = lastError instanceof Error ? lastError.message : String(lastError);
+        yield { 
+          type: 'retry', 
+          attempt, 
+          maxRetries: OpenAIAdapter.MAX_RETRIES, 
+          delayMs: delay,
+          error: msg 
+        };
         await new Promise(r => setTimeout(r, delay));
       }
 
