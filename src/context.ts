@@ -79,15 +79,19 @@ export async function buildSystemPromptAsync(cwd: string): Promise<string> {
 ${projectInstructions}`;
   }
 
-  // 注入跨会话长效记忆
+  // 注入跨会话长效记忆 (L2 Pointer Mode)
   const memories = await getRelevantMemories(cwd);
   if (memories.length > 0) {
     const memoryBlocks = memories.map(m => `- [${new Date(m.createdAt).toLocaleString()}] ${m.snippet}`).join('\n');
     finalPrompt += `
 
-## <LONG_TERM_MEMORY> 长效记忆
-以下是属于该会话/目录相关的跨会话持久化记忆，请在解决问题时优先参考并应用这些知识：
+## <LONG_TERM_MEMORY> 长效记忆指针 (L2 Knowledge Pointers)
+以下是属于该项目的跨会话持久化记忆，通常以 JSON 指针或总结的形式存在：
 ${memoryBlocks}
+
+**利用策略 (Dereferencing):**
+1. 记忆中存储的是“指针 (Pointers)”而非详细源码。
+2. 解决问题前，优先阅读指针内容，然后使用你的工具 (例如 \`list_dir\`, \`grep\`, \`file_read\`) 根据指针指示去抓取、核实最新的真实源码。
 </LONG_TERM_MEMORY>`;
   }
 
