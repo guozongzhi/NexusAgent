@@ -74,6 +74,8 @@ export interface ChatScreenProps {
   pendingApproval: ApprovalRequest | null;
   setPendingApproval: (val: ApprovalRequest | null) => void;
   tokenCount: number;
+  promptTokens: number;
+  completionTokens: number;
   handleSubmit: (val: string) => void;
   /** 上下文窗口 */
   contextWindow?: number;
@@ -94,6 +96,8 @@ export function ChatScreen({
   pendingApproval,
   setPendingApproval,
   tokenCount,
+  promptTokens,
+  completionTokens,
   handleSubmit,
   contextWindow = 128_000,
   contextUsedTokens = 0,
@@ -175,6 +179,8 @@ export function ChatScreen({
           cwd={cwd}
           model={modelName}
           tokenCount={tokenCount}
+          promptTokens={promptTokens}
+          completionTokens={completionTokens}
           isProcessing={isProcessing}
           contextWindow={contextWindow}
           contextUsedTokens={contextUsedTokens}

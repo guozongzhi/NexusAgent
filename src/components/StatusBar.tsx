@@ -15,6 +15,8 @@ interface StatusBarProps {
   model: string;
   cwd: string;
   tokenCount?: number;
+  promptTokens?: number;
+  completionTokens?: number;
   isProcessing?: boolean;
   /** 上下文窗口大小 */
   contextWindow?: number;
@@ -48,7 +50,7 @@ function formatCost(usd: number): string {
 }
 
 export function StatusBar({
-  model, tokenCount, isProcessing,
+  model, tokenCount, promptTokens = 0, completionTokens = 0, isProcessing,
   contextWindow = 128_000, contextUsedTokens = 0, sessionCostUsd = 0,
 }: StatusBarProps): React.ReactNode {
   const termWidth = process.stdout.columns || 80;
@@ -63,11 +65,12 @@ export function StatusBar({
     </Box>
   ) : null;
 
-  // Token 信息
+  // Token 信息 (总/上行/下行)
   const tokensNode = (tokenCount && tokenCount > 0) ? (
     <Box gap={1}>
       <Text dimColor>tok</Text>
       <Text>{formatTokens(tokenCount)}</Text>
+      <Text dimColor>↑{formatTokens(promptTokens)} ↓{formatTokens(completionTokens)}</Text>
     </Box>
   ) : null;
 

@@ -376,7 +376,11 @@ export function useAgentLoop({
 
       if (response.usage) {
         const newTokenCount = snapshot.tokenCount + response.usage.promptTokens + response.usage.completionTokens;
-        agentState.setState({ tokenCount: newTokenCount });
+        agentState.setState({ 
+          tokenCount: newTokenCount,
+          promptTokens: snapshot.promptTokens + response.usage.promptTokens,
+          completionTokens: snapshot.completionTokens + response.usage.completionTokens,
+        });
 
         import('../services/telemetry/CostTracker.ts').then(({ costTracker }) => {
           const record = costTracker.recordUsage(actualModel, {
@@ -433,6 +437,8 @@ export function useAgentLoop({
     pendingApproval: snapshot.pendingApproval,
     setPendingApproval: (v: ApprovalRequest | null) => agentState.setState({ pendingApproval: v }),
     tokenCount: snapshot.tokenCount,
+    promptTokens: snapshot.promptTokens,
+    completionTokens: snapshot.completionTokens,
     contextWindow: snapshot.contextWindow,
     contextUsedTokens: snapshot.contextUsedTokens,
     sessionCostUsd: snapshot.sessionCostUsd,

@@ -28,7 +28,7 @@ function boxLine(content: string, totalWidth: number, paddingX: number = 2): str
   const pad = Math.max(0, maxContentWidth - visibleLen);
   const leftPad = ' '.repeat(paddingX);
   const rightPad = ' '.repeat(pad + paddingX);
-  return `  ${chalk.yellowBright(BOX.v)}${leftPad}${content}${rightPad}${chalk.yellowBright(BOX.v)}`;
+  return `  ${chalk.yellow(BOX.v)}${leftPad}${content}${rightPad}${chalk.yellow(BOX.v)}`;
 }
 
 /**
@@ -62,10 +62,18 @@ export function printWelcome(version: string, cwd: string, model: string): void 
 
   console.log('');
 
-  // ── 2. 清新提示区 ──
-  console.log(`  ${chalk.cyanBright('ℹ')}  ${chalk.yellowBright('Agent Tips')}`);
-  console.log(`     ${chalk.whiteBright('•')} Type ${chalk.cyanBright('/help')} ${chalk.dim('to see available commands.')}`);
-  console.log(`     ${chalk.whiteBright('•')} Type ${chalk.cyanBright('/memory')} ${chalk.dim('to save preferences for future sessions.')}`);
+  // ── 2. 清新提示区（带柔和黄框） ──
+  const terminalWidth = process.stdout.columns || 80;
+  const boxTotalWidth = Math.max(Math.min(terminalWidth - 4, 140), 60);
+  const boxInnerWidth = boxTotalWidth - 2; 
+
+  console.log(`  ${chalk.yellow(BOX.tl)}${chalk.yellow(BOX.h.repeat(boxInnerWidth))}${chalk.yellow(BOX.tr)}`);
+  console.log(boxLine('', boxTotalWidth));
+  console.log(boxLine(`${chalk.cyanBright('ℹ')}  ${chalk.yellowBright('Agent Tips')}`, boxTotalWidth, 2));
+  console.log(boxLine(`${chalk.whiteBright('•')} Type ${chalk.cyanBright('/help')} ${chalk.dim('to see available commands.')}`, boxTotalWidth, 2));
+  console.log(boxLine(`${chalk.whiteBright('•')} Type ${chalk.cyanBright('/memory')} ${chalk.dim('to save preferences for future sessions.')}`, boxTotalWidth, 2));
+  console.log(boxLine('', boxTotalWidth));
+  console.log(`  ${chalk.yellow(BOX.bl)}${chalk.yellow(BOX.h.repeat(boxInnerWidth))}${chalk.yellow(BOX.br)}`);
   
   console.log('');
 }

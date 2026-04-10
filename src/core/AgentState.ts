@@ -34,6 +34,10 @@ export interface AgentStateSnapshot {
   pendingApproval: ApprovalRequest | null;
   /** 累计 token 数 */
   tokenCount: number;
+  /** 累计上传 (Prompt) token 数 */
+  promptTokens: number;
+  /** 累计下传 (Completion) token 数 */
+  completionTokens: number;
   /** 上下文窗口大小 */
   contextWindow: number;
   /** 已使用的上下文 token 估算 */
@@ -66,6 +70,8 @@ export class AgentState {
       toolExecutions: [],
       pendingApproval: null,
       tokenCount: 0,
+      promptTokens: 0,
+      completionTokens: 0,
       contextWindow: 128_000,
       contextUsedTokens: 0,
       sessionCostUsd: 0,

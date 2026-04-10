@@ -70,6 +70,8 @@ function NexusApp({ oneShotQuery, skipPermissions }: { oneShotQuery?: string; sk
       pendingApproval={agentState.pendingApproval}
       setPendingApproval={agentState.setPendingApproval}
       tokenCount={agentState.tokenCount}
+      promptTokens={agentState.promptTokens}
+      completionTokens={agentState.completionTokens}
       handleSubmit={agentState.handleSubmit}
       contextWindow={agentState.contextWindow}
       contextUsedTokens={agentState.contextUsedTokens}
