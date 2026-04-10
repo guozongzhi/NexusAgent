@@ -316,6 +316,17 @@ export function useAgentLoop({
       }));
       const toolDefs = [...localToolDefs, ...mcpToolDefs];
 
+      // 1. 动态挂载预估 Prompt Token (1 Token ≈ 4 Chars) 保证发送请求即有 UI 反馈
+      let localEstimatedPrompt = Math.ceil(JSON.stringify(trimmedMessages).length / 4);
+      let localEstimatedCompletion = 0;
+      let generatedChars = 0;
+
+      const preRunState = agentState.getState();
+      agentState.setState({
+        promptTokens: preRunState.promptTokens + localEstimatedPrompt,
+        tokenCount: preRunState.tokenCount + localEstimatedPrompt,
+      });
+
       // 调用 QueryEngine
       const response = await engineRef.current.run({
         systemPrompt: sysPrompt,
@@ -331,6 +342,20 @@ export function useAgentLoop({
         abortSignal: abortController.signal,
         onTextDelta: (delta: string) => {
           streamProcessorRef.current?.push(delta);
+          
+          // 2. 流式阶段实时模拟 Token 下发累加
+          generatedChars += delta.length;
+          if (generatedChars >= 4) {
+            const addedTokens = Math.floor(generatedChars / 4);
+            generatedChars %= 4;
+            localEstimatedCompletion += addedTokens;
+            
+            const curState = agentState.getState();
+            agentState.setState({
+              completionTokens: curState.completionTokens + addedTokens,
+              tokenCount: curState.tokenCount + addedTokens,
+            });
+          }
         },
         onToolStart: (name: string, args: any) => {
           agentState.setState({
@@ -376,11 +401,14 @@ export function useAgentLoop({
 
       if (response.usage) {
         const freshState = agentState.getState();
-        const newTokenCount = freshState.tokenCount + response.usage.promptTokens + response.usage.completionTokens;
+        // 3. 结束时使用服务端的真实 Token 修正估算带来的误差
+        const deltaPrompt = response.usage.promptTokens - localEstimatedPrompt;
+        const deltaComp = response.usage.completionTokens - localEstimatedCompletion;
+
         agentState.setState({ 
-          tokenCount: newTokenCount,
-          promptTokens: freshState.promptTokens + response.usage.promptTokens,
-          completionTokens: freshState.completionTokens + response.usage.completionTokens,
+          tokenCount: freshState.tokenCount + deltaPrompt + deltaComp,
+          promptTokens: freshState.promptTokens + deltaPrompt,
+          completionTokens: freshState.completionTokens + deltaComp,
         });
 
         import('../services/telemetry/CostTracker.ts').then(({ costTracker }) => {
