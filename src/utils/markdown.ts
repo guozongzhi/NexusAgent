@@ -92,6 +92,17 @@ export function renderMarkdown(text: string): string {
 
   let output = text;
 
+  // 0. 简易 LaTeX Math 替换处理 (防止 $\rightarrow$ 原样输出)
+  output = output.replace(/\$([^\$]+)\$/g, (match, formula) => {
+    let tf = formula;
+    tf = tf.replace(/\\rightarrow/g, '→');
+    tf = tf.replace(/\\leftarrow/g, '←');
+    tf = tf.replace(/\\Rightarrow/g, '⇒');
+    tf = tf.replace(/\\Leftarrow/g, '⇐');
+    tf = tf.replace(/\\leftrightarrow/g, '↔');
+    return chalk.italic.cyanBright(tf);
+  });
+
   // 1. 代码块 ```lang...``` （最高优先级，防止内部被其他正则破坏）
   output = output.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
     const langLabel = lang || 'code';

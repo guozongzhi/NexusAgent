@@ -66,7 +66,7 @@ export function StatusBar({
   ) : null;
 
   // Token 信息 (总/上行/下行)
-  const tokensNode = (tokenCount && tokenCount > 0) ? (
+  const tokensNode = tokenCount !== undefined ? (
     <Box gap={1}>
       <Text dimColor>tok</Text>
       <Text>{formatTokens(tokenCount)}</Text>
