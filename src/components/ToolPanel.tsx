@@ -94,6 +94,14 @@ function ToolRow({ tool, shouldAnimate, addMargin }: ToolRowProps): React.ReactN
         {isResolved && tool.durationMs !== undefined && (
           <Text color="gray"> {formatDuration(tool.durationMs)}</Text>
         )}
+
+        {/* 状态标记 */}
+        {tool.status === 'success' && (
+          <Text color="green"> ✓</Text>
+        )}
+        {tool.status === 'error' && (
+          <Text color="red"> ✗</Text>
+        )}
       </Box>
 
       {/* 结果行（仅已完成时展示） */}
@@ -132,6 +140,12 @@ export function getToolDisplayName(toolName: string): string {
     'list_dir': 'ListDir',
     'search': 'Search',
     'grep': 'Grep',
+    'glob': 'Glob',
+    'note': 'Note',
+    'task_manage': 'Task',
+    'web_fetch': 'Fetch',
+    'web_search': 'Search',
+    'notebook_edit': 'Notebook',
   };
   return nameMap[toolName] ?? toolName;
 }
@@ -147,6 +161,21 @@ export function getToolParamSummary(toolName: string, input: Record<string, unkn
     case 'file_write':
     case 'file_edit':
       return String(input.path ?? input.file_path ?? '');
+    case 'list_dir':
+      return String(input.path ?? input.directory ?? '.');
+    case 'glob':
+      return String(input.pattern ?? '');
+    case 'grep':
+      return String(input.pattern ?? input.query ?? '');
+    case 'web_fetch':
+      return String(input.url ?? '');
+    case 'web_search':
+      return String(input.query ?? '');
+    case 'notebook_edit': {
+      const action = String(input.action ?? '');
+      const path = String(input.path ?? '');
+      return `${action} ${path}`.trim();
+    }
     default:
       return '';
   }
