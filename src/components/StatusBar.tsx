@@ -60,49 +60,46 @@ export function StatusBar({
 
   return (
     <Box flexDirection="column" width="100%">
-      {/* 分隔线 */}
-      <Box width="100%">
-        <Text dimColor>{'─'.repeat(termWidth)}</Text>
-      </Box>
-
-      {/* 矩阵标签行 */}
-      <Box width="100%" justifyContent="space-between" paddingBottom={0}>
-        <Box width="25%"><Text dimColor>workspace (/cwd)</Text></Box>
-        <Box width="25%"><Text dimColor>context usage</Text></Box>
-        <Box width="25%"><Text dimColor>tokens (/cost)</Text></Box>
-        <Box width="25%" justifyContent="flex-end"><Text dimColor>/model</Text></Box>
+      {/* 分隔线（使用原生 Ink 软边框而非暴力字符串填充，完美自适应缩放） */}
+      <Box width="100%" borderStyle="single" borderTop={true} borderBottom={false} borderLeft={false} borderRight={false} borderColor="gray" paddingBottom={0} paddingTop={0}>
+        <Box width="100%" justifyContent="space-between">
+          <Box flexGrow={1} flexBasis="25%"><Text dimColor wrap="truncate-end">workspace (/cwd)</Text></Box>
+          <Box flexGrow={1} flexBasis="25%"><Text dimColor wrap="truncate-end">context usage</Text></Box>
+          <Box flexGrow={1} flexBasis="25%"><Text dimColor wrap="truncate-end">tokens (/cost)</Text></Box>
+          <Box flexGrow={1} flexBasis="25%" justifyContent="flex-end"><Text dimColor wrap="truncate-end">/model</Text></Box>
+        </Box>
       </Box>
 
       {/* 矩阵数值行 */}
       <Box width="100%" justifyContent="space-between">
-        <Box width="25%">
-          <Text dimColor>{shortCwd}</Text>
+        <Box flexGrow={1} flexBasis="25%" overflowX="hidden">
+          <Text dimColor wrap="truncate-end">{shortCwd}</Text>
         </Box>
         
-        <Box width="25%">
+        <Box flexGrow={1} flexBasis="25%" overflowX="hidden">
           {contextUsedTokens > 0 ? (
-            <Text color={contextUsedTokens / contextWindow > 0.8 ? 'yellow' : 'green'}>
+            <Text color={contextUsedTokens / contextWindow > 0.8 ? 'yellow' : 'green'} wrap="truncate-end">
               {renderContextBar(contextUsedTokens, contextWindow)}
             </Text>
           ) : (
-            <Text dimColor>no context</Text>
+            <Text dimColor wrap="truncate-end">no context</Text>
           )}
         </Box>
 
-        <Box width="25%">
+        <Box flexGrow={1} flexBasis="25%" overflowX="hidden">
           {showTokens ? (
-            <Text>
+            <Text wrap="truncate-end">
               {formatTokens(tokenCount || 0)}
               {isProcessing ? <Text dimColor> ↑{formatTokens(promptTokens)} ↓{formatTokens(completionTokens)}</Text> : ''}
               {sessionCostUsd > 0 ? <Text color="yellow"> {formatCost(sessionCostUsd)}</Text> : ''}
             </Text>
           ) : (
-            <Text dimColor>-</Text>
+            <Text dimColor wrap="truncate-end">-</Text>
           )}
         </Box>
 
-        <Box width="25%" justifyContent="flex-end">
-          <Text color="cyan">{model}</Text>
+        <Box flexGrow={1} flexBasis="25%" overflowX="hidden" justifyContent="flex-end">
+          <Text color="cyan" wrap="truncate-end">{model}</Text>
         </Box>
       </Box>
     </Box>

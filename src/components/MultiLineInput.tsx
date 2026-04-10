@@ -98,12 +98,12 @@ export function MultiLineInput({
   const showPlaceholder = !displayValue && !disabled;
 
   return (
-    <Box>
+    <Box flexGrow={1} overflowX="hidden">
       <Text color="cyanBright" bold>❯ </Text>
       {showPlaceholder ? (
-        <Text dimColor>{placeholder}</Text>
+        <Text dimColor wrap="truncate-end">{placeholder}</Text>
       ) : (
-        <Text>
+        <Text wrap="wrap">
           {displayValue}
           {!disabled && cursorVisible ? <Text color="cyanBright">{cursor}</Text> : null}
         </Text>
