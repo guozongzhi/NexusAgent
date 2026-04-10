@@ -194,6 +194,18 @@ export function useAgentLoop({
         setHistory: (msgs) => { historyRef.current = msgs; },
         getTokenCount: () => tokenCount,
         getModel: () => modelName,
+        extractWorkspaceContext: async () => {
+          if (!engineRef.current) return null;
+          setIsProcessing(true);
+          setSpinnerMode('thinking');
+          try {
+            const { extractProjectFacts } = await import('../services/memory/WorkspaceGraph.ts');
+            return await extractProjectFacts(cwd, engineRef.current, modelName);
+          } finally {
+            setIsProcessing(false);
+            setSpinnerMode('idle');
+          }
+        }
       });
 
       if (resp.rewrittenQuery) {

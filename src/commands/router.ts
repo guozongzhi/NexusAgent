@@ -19,6 +19,8 @@ export interface CommandActions {
   getTokenCount: () => number;
   /** 获取当前模型名 */
   getModel: () => string;
+  /** 触发工作区图谱提取（记忆抽取） */
+  extractWorkspaceContext: () => Promise<string | null>;
 }
 
 export interface CommandResult {
@@ -203,7 +205,7 @@ export async function parseAndRouteCommand(query: string, actions: CommandAction
 
     case '/memory': {
       if (parts.length < 2) {
-        return { handled: true, output: '用法:\n  `/memory list`\n  `/memory add <内容>`\n  `/memory global <内容>` (全局记忆)\n  `/memory rm <id>`\n  `/memory clear`\n\n*长效记忆会在每次对话时自动注入给 Agent。*' };
+        return { handled: true, output: '用法:\n  `/memory list`\n  `/memory add <内容>`\n  `/memory global <内容>` (全局记忆)\n  `/memory rm <id>`\n  `/memory clear`\n  `/memory learn` (提取项目图谱)\n\n*长效记忆会在每次对话时自动注入给 Agent。*' };
       }
       
       const subCmd = parts[1];
@@ -217,6 +219,15 @@ export async function parseAndRouteCommand(query: string, actions: CommandAction
         }
         const list = memories.map(m => `- \`[${m.id}]\` ${m.cwd === '*' ? '(全局) ' : ''}${m.snippet}`).join('\n');
         return { handled: true, output: `当前目录的相关长效记忆:\n\n${list}` };
+      }
+
+      if (subCmd === 'learn') {
+        const result = await actions.extractWorkspaceContext();
+        if (result) {
+          return { handled: true, output: `✅ 项目图谱已提炼并记录至核心记忆库：\n\n${result}\n\n*它将在未来的会话中作为隐性规则自动生效。*` };
+        } else {
+          return { handled: true, output: `⚠️ 根据当前目录文件结构，无法提取出足够有效的项目事实特征。` };
+        }
       }
 
       if (subCmd === 'add' || subCmd === 'global') {
