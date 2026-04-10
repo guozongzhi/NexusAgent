@@ -11,7 +11,7 @@
 import React from 'react';
 import { Box, Text, Static } from 'ink';
 import { renderMarkdown } from '../utils/markdown.ts';
-import { displayWidth } from '../utils/path.ts';
+import { shortenPath } from '../utils/path.ts';
 import { StatusBar } from '../components/StatusBar.tsx';
 import { PermissionPrompt } from '../components/PermissionPrompt.tsx';
 import { ToolPanel, getToolDisplayName, getToolParamSummary } from '../components/ToolPanel.tsx';
@@ -25,23 +25,15 @@ import { addAutoApprovedTool } from '../security/permissionStore.ts';
 function StaticMessageBlock({ item }: { item: CompletedMessage }) {
   if (item.role === 'user') {
     const lines = item.content.trimEnd().split('\n');
-    const termWidth = process.stdout.columns || 80;
-    
     return (
       <Box marginTop={1} flexDirection="column" width="100%">
-        {lines.map((line, idx) => {
-          const prefix = idx === 0 ? ' >  ' : '    ';
-          const body = prefix + line;
-          // 使用终端真实显示宽度（兼容中日韩全角字符与 Emoji 各占宽2格），防止越界强制折行
-          const padLen = Math.max(0, termWidth - displayWidth(body) - 1); 
-          
-          return (
-            <Text key={idx} backgroundColor="#232323">
-              {idx === 0 ? <Text color="magentaBright" bold>{' >  '}</Text> : <Text>{'    '}</Text>}
-              <Text color="white">{line + ' '.repeat(padLen)}</Text>
-            </Text>
-          );
-        })}
+        {lines.map((line, idx) => (
+          <Text key={idx} backgroundColor="#232323">
+            {idx === 0 ? <Text color="magentaBright" bold>{' >  '}</Text> : <Text>{'    '}</Text>}
+            {/* 核心黑科技：通过 ANSI '\x1b[K' 触发原生 Terminal 渲染层“以当前背景色清除至行尾”，完美支持终端动态缩放，告别 js 计算。 */}
+            <Text color="white">{line + '\x1b[K'}</Text>
+          </Text>
+        ))}
       </Box>
     );
   }
