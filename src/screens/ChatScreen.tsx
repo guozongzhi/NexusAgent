@@ -30,8 +30,7 @@ function StaticMessageBlock({ item }: { item: CompletedMessage }) {
         {lines.map((line, idx) => (
           <Text key={idx} backgroundColor="#232323">
             {idx === 0 ? <Text color="magentaBright" bold>{' >  '}</Text> : <Text>{'    '}</Text>}
-            {/* 核心黑科技：通过 ANSI '\x1b[K' 触发原生 Terminal 渲染层“以当前背景色清除至行尾”，完美支持终端动态缩放，告别 js 计算。 */}
-            <Text color="white">{line + '\x1b[K'}</Text>
+            <Text color="white">{line + '   '}</Text>
           </Text>
         ))}
       </Box>
