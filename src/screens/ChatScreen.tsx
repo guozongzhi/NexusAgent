@@ -25,22 +25,14 @@ import { addAutoApprovedTool } from '../security/permissionStore.ts';
 function StaticMessageBlock({ item }: { item: CompletedMessage }) {
   if (item.role === 'user') {
     const lines = item.content.trimEnd().split('\n');
-    const termWidth = process.stdout.columns || 80;
-    
     return (
       <Box marginTop={1} flexDirection="column" width="100%">
-        {lines.map((line, idx) => {
-          const body = idx === 0 ? ` >  ${line}` : `    ${line}`;
-          const padLen = Math.max(0, termWidth - 1 - body.length);
-          const formatted = body + ' '.repeat(padLen);
-          
-          return (
-            <Text key={idx} backgroundColor="blackBright">
-              {idx === 0 ? <Text color="magentaBright" bold>{' >  '}</Text> : <Text>{'    '}</Text>}
-              <Text color="white">{line + ' '.repeat(padLen)}</Text>
-            </Text>
-          );
-        })}
+        {lines.map((line, idx) => (
+          <Text key={idx}>
+            {idx === 0 ? <Text color="magentaBright" bold>{' >  '}</Text> : <Text>{'    '}</Text>}
+            <Text dimColor>{line}</Text>
+          </Text>
+        ))}
       </Box>
     );
   }
