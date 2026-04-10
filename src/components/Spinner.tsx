@@ -67,11 +67,11 @@ export function NexusSpinner({ mode, label, hasActiveTools }: NexusSpinnerProps)
       <Text color={color}>
         {isStalled ? DOT_FRAMES[dotFrame] : BRAILLE_FRAMES[frame]}{' '}
       </Text>
-      <Text color={color} bold>
+      <Text color={color} italic>
         {verb}…
       </Text>
-      {elapsedMs > 2000 && (
-        <Text color="gray"> ({elapsed})</Text>
+      {elapsedMs > 1000 && (
+        <Text color="gray" dimColor italic> (Ctrl+C to cancel, {elapsed})</Text>
       )}
       {hasActiveTools && (
         <Text color="gray"> · tools active</Text>

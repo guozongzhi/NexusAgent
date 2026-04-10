@@ -50,41 +50,13 @@ function formatCost(usd: number): string {
 }
 
 export function StatusBar({
-  model, tokenCount, promptTokens = 0, completionTokens = 0, isProcessing,
+  model, cwd, tokenCount, promptTokens = 0, completionTokens = 0, isProcessing,
   contextWindow = 128_000, contextUsedTokens = 0, sessionCostUsd = 0,
 }: StatusBarProps): React.ReactNode {
   const termWidth = process.stdout.columns || 80;
-
-  // 上下文窗口进度条（仅当有 token 使用时显示）
-  const contextBar = contextUsedTokens > 0 ? (
-    <Box gap={1}>
-      <Text dimColor>ctx</Text>
-      <Text color={contextUsedTokens / contextWindow > 0.8 ? 'yellow' : 'green'}>
-        {renderContextBar(contextUsedTokens, contextWindow)}
-      </Text>
-    </Box>
-  ) : null;
-
-  // Token 信息 (总/上行/下行：仅在处理中或有历史数据的静态下才显示)
   const showTokens = isProcessing || (tokenCount && tokenCount > 0);
-  const tokensNode = showTokens ? (
-    <Box gap={1}>
-      <Text dimColor>tok</Text>
-      <Text>{formatTokens(tokenCount || 0)}</Text>
-      {/* 仅在数据流动（isProcessing）时展示具体上/下行明细 */}
-      {isProcessing && (
-        <Text dimColor>↑{formatTokens(promptTokens)} ↓{formatTokens(completionTokens)}</Text>
-      )}
-    </Box>
-  ) : null;
-
-  // 成本信息
-  const costNode = sessionCostUsd > 0 ? (
-    <Text color="yellow">{formatCost(sessionCostUsd)}</Text>
-  ) : null;
-
-  // 动态提示
-  const centerText = isProcessing ? 'Ctrl+C to interrupt' : '';
+  const home = process.env.HOME || '';
+  const shortCwd = cwd.startsWith(home) ? '~' + cwd.slice(home.length) : cwd;
 
   return (
     <Box flexDirection="column" width="100%">
@@ -93,26 +65,44 @@ export function StatusBar({
         <Text dimColor>{'─'.repeat(termWidth)}</Text>
       </Box>
 
-      {/* 三栏内容 */}
+      {/* 矩阵标签行 */}
+      <Box width="100%" justifyContent="space-between" paddingBottom={0}>
+        <Box width="25%"><Text dimColor>workspace (/cwd)</Text></Box>
+        <Box width="25%"><Text dimColor>context usage</Text></Box>
+        <Box width="25%"><Text dimColor>tokens (/cost)</Text></Box>
+        <Box width="25%" justifyContent="flex-end"><Text dimColor>/model</Text></Box>
+      </Box>
+
+      {/* 矩阵数值行 */}
       <Box width="100%" justifyContent="space-between">
-        {/* 左侧 */}
-        <Text dimColor>? for shortcuts</Text>
-
-        {/* 中间 */}
-        <Text dimColor italic>{centerText}</Text>
-
-        {/* 右侧 */}
-        <Box gap={2}>
-          {isProcessing && (
-            <Text color="cyan">● Processing</Text>
+        <Box width="25%">
+          <Text dimColor>{shortCwd}</Text>
+        </Box>
+        
+        <Box width="25%">
+          {contextUsedTokens > 0 ? (
+            <Text color={contextUsedTokens / contextWindow > 0.8 ? 'yellow' : 'green'}>
+              {renderContextBar(contextUsedTokens, contextWindow)}
+            </Text>
+          ) : (
+            <Text dimColor>no context</Text>
           )}
-          {contextBar}
-          {tokensNode}
-          {costNode}
-          <Box gap={1}>
-            <Text dimColor>/model</Text>
-            <Text>{model}</Text>
-          </Box>
+        </Box>
+
+        <Box width="25%">
+          {showTokens ? (
+            <Text>
+              {formatTokens(tokenCount || 0)}
+              {isProcessing ? <Text dimColor> ↑{formatTokens(promptTokens)} ↓{formatTokens(completionTokens)}</Text> : ''}
+              {sessionCostUsd > 0 ? <Text color="yellow"> {formatCost(sessionCostUsd)}</Text> : ''}
+            </Text>
+          ) : (
+            <Text dimColor>-</Text>
+          )}
+        </Box>
+
+        <Box width="25%" justifyContent="flex-end">
+          <Text>{model}</Text>
         </Box>
       </Box>
     </Box>

@@ -24,10 +24,27 @@ import { addAutoApprovedTool } from '../security/permissionStore.ts';
 // ─── 消息块渲染（用于 Static 内的已完成消息）──────────
 function StaticMessageBlock({ item }: { item: CompletedMessage }) {
   if (item.role === 'user') {
-    const padded = padToTermWidth(' ' + item.content);
+    const lines = item.content.split('\n');
+    const termWidth = process.stdout.columns || 80;
+    
+    const body = lines[0] || '';
+    const padLen = Math.max(0, termWidth - 4 - body.length);
+    const firstPads = ' '.repeat(padLen);
+    
     return (
-      <Box marginTop={1}>
-        <Text backgroundColor="blackBright" color="white">{padded}</Text>
+      <Box marginTop={1} flexDirection="column" width="100%">
+        <Text backgroundColor="blackBright">
+          <Text color="magentaBright" bold>{' >  '}</Text>
+          <Text color="white">{body + firstPads}</Text>
+        </Text>
+        {lines.slice(1).map((line, idx) => {
+          const lPad = Math.max(0, termWidth - 4 - line.length);
+          return (
+            <Text key={idx} backgroundColor="blackBright" color="white">
+              {'    ' + line + ' '.repeat(lPad)}
+            </Text>
+          );
+        })}
       </Box>
     );
   }
@@ -37,7 +54,7 @@ function StaticMessageBlock({ item }: { item: CompletedMessage }) {
     return (
       <Box flexDirection="column" marginBottom={1}>
         <Box>
-          <Text color="white" bold>{'● '}</Text>
+          <Text color="magentaBright" bold>{'✦ '}</Text>
           <Text wrap="wrap">{content}</Text>
         </Box>
       </Box>
@@ -103,8 +120,9 @@ export function ChatScreen({
   contextUsedTokens = 0,
   sessionCostUsd = 0,
 }: ChatScreenProps) {
-  const { useProactiveTips } = require('../hooks/useProactiveTips.ts');
+  const { useProactiveTips, useRandomTip } = require('../hooks/useProactiveTips.ts');
   const activeTip = useProactiveTips(inputValue);
+  const randomTip = useRandomTip(isProcessing);
 
   return (
     <>
@@ -114,7 +132,7 @@ export function ChatScreen({
 
       {isProcessing && streamingText && (
         <Box marginBottom={1}>
-          <Text color="white" bold>{'● '}</Text>
+          <Text color="magentaBright" bold>{'✦ '}</Text>
           <Text wrap="wrap">{renderMarkdown(streamingText)}</Text>
         </Box>
       )}
@@ -154,7 +172,7 @@ export function ChatScreen({
                 value={inputValue}
                 onChange={setInputValue}
                 onSubmit={handleSubmit}
-                placeholder="输入消息... (↑/↓ 翻阅历史)"
+                placeholder="Type your message, /commands, or @path/to/file..."
                 disabled={isProcessing}
               />
               {/* 启发式输入提示 */}
@@ -167,8 +185,11 @@ export function ChatScreen({
           )}
 
           {isProcessing && spinnerMode !== 'idle' && (
-            <Box paddingX={1}>
+            <Box width="100%" justifyContent="space-between" paddingX={1}>
               <NexusSpinner mode={spinnerMode as SpinnerMode} />
+              {randomTip && (
+                <Text dimColor italic>{randomTip}</Text>
+              )}
             </Box>
           )}
         </Box>

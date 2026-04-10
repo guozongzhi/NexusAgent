@@ -21,6 +21,28 @@ const KEYWORD_HINTS = [
   { match: /插件|mcp/, tip: '使用 /mcp add 可以热拔插挂载任何社区的 MCP 组件库！' }
 ];
 
+const RANDOM_TIPS = [
+  'Tip: Add files to context using @path/to/file',
+  'Tip: Use /memory to persist project context',
+  'Tip: Use /sk to load complex skill sets',
+  'Tip: Press ↑ to navigate through your input history',
+  'Tip: Keep context clean using /compact',
+];
+
+export function useRandomTip(isProcessing: boolean): string | null {
+  const [tip, setTip] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isProcessing) {
+      setTip(RANDOM_TIPS[Math.floor(Math.random() * RANDOM_TIPS.length)] ?? null);
+    } else {
+      setTip(null);
+    }
+  }, [isProcessing]);
+
+  return tip;
+}
+
 export function useProactiveTips(inputValue: string): Tip | null {
   const [activeTip, setActiveTip] = useState<Tip | null>(null);
 
