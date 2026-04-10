@@ -87,19 +87,104 @@ const DANGEROUS_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /\bchown\s+.*\s+\//, reason: '禁止修改根路径所有者' },
 ];
 
+/** 子命令注入模式 — 检测 $(...) 和 `...` 嵌套 */
+const INJECTION_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
+  { pattern: /\$\(\s*(curl|wget|nc|ncat)\b/, reason: '禁止通过子命令注入执行远程内容' },
+  { pattern: /`\s*(curl|wget|nc|ncat)\b/, reason: '禁止通过反引号注入执行远程内容' },
+  { pattern: /\beval\s+["'\$]/, reason: '禁止 eval 动态执行（高风险注入向量）' },
+  { pattern: /\bsource\s+<\(/, reason: '禁止 process substitution 加载远程脚本' },
+  { pattern: /\bexec\s+\d*[<>]/, reason: '禁止文件描述符重定向攻击' },
+];
+
 /**
- * 检查命令是否安全
+ * 检查命令是否安全（含子命令注入检测）
  */
 export function validateCommand(command: string): { safe: boolean; reason?: string } {
   const trimmed = command.trim();
 
+  // 基础危险命令检测
   for (const { pattern, reason } of DANGEROUS_PATTERNS) {
     if (pattern.test(trimmed)) {
       return { safe: false, reason };
     }
   }
 
+  // 子命令注入检测
+  for (const { pattern, reason } of INJECTION_PATTERNS) {
+    if (pattern.test(trimmed)) {
+      return { safe: false, reason };
+    }
+  }
+
   return { safe: true };
+}
+
+// ─── 符号链接防护 ──────────────────────────────────────
+
+import { lstatSync, realpathSync } from 'node:fs';
+
+/**
+ * 检测路径是否为符号链接指向工作目录外的位置
+ * 防止通过 symlink 绕过路径限制
+ */
+export function validateSymlink(targetPath: string, cwd: string): { safe: boolean; reason?: string } {
+  try {
+    const stat = lstatSync(targetPath);
+    if (stat.isSymbolicLink()) {
+      const realPath = realpathSync(targetPath);
+      const normalizedCwd = cwd.normalize('NFC');
+      const home = process.env['HOME'] ?? '';
+      if (
+        !realPath.startsWith(normalizedCwd + path.sep) &&
+        realPath !== normalizedCwd &&
+        !(home && realPath.startsWith(home + path.sep))
+      ) {
+        return { safe: false, reason: `符号链接指向工作目录外: ${targetPath} → ${realPath}` };
+      }
+    }
+  } catch {
+    // 文件不存在（新建场景），safe
+  }
+  return { safe: true };
+}
+
+// ─── 网络访问白名单 ──────────────────────────────────────
+
+const NETWORK_WHITELIST = new Set([
+  // 搜索引擎
+  'html.duckduckgo.com',
+  'duckduckgo.com',
+  // 常用开发文档
+  'raw.githubusercontent.com',
+  'api.github.com',
+  'registry.npmjs.org',
+  'pypi.org',
+  'crates.io',
+  'docs.rs',
+  'pkg.go.dev',
+  // AI API
+  'api.openai.com',
+  'api.anthropic.com',
+  'generativelanguage.googleapis.com',
+]);
+
+/**
+ * 验证 URL 是否在网络白名单中
+ * 返回 safe=true 表示允许访问
+ * 注意：当前仅做警告，不阻断（用于日志审计）
+ */
+export function validateNetworkAccess(url: string): { safe: boolean; host: string; reason?: string } {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname;
+    if (NETWORK_WHITELIST.has(host)) {
+      return { safe: true, host };
+    }
+    // 非白名单域名 — 当前不阻断，仅标记
+    return { safe: true, host, reason: `域名 ${host} 不在白名单中（已放行但已记录）` };
+  } catch {
+    return { safe: false, host: '', reason: `无效的 URL: ${url}` };
+  }
 }
 
 // ─── 文件大小限制 ──────────────────────────────────────

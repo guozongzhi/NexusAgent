@@ -10,6 +10,7 @@ import './FileWriteTool.ts';
 
 // Phase 2 高级工具
 import './FileEditTool.ts';
+import './MultiEditTool.ts';
 import './GlobTool.ts';
 import './GrepTool.ts';
 import './ListDirTool.ts';

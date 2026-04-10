@@ -33,8 +33,24 @@ export interface ToolResultContentBlock {
   is_error?: boolean;
 }
 
+/** 思考过程内容块 */
+export interface ThinkingContentBlock {
+  type: 'thinking';
+  text: string;
+}
+
+/** 图像内容块（预留多模态） */
+export interface ImageContentBlock {
+  type: 'image';
+  source: {
+    type: 'base64' | 'url';
+    media_type: string;
+    data: string;
+  };
+}
+
 /** 内容块联合类型 */
-export type ContentBlock = TextContentBlock | ToolUseContentBlock | ToolResultContentBlock;
+export type ContentBlock = TextContentBlock | ToolUseContentBlock | ToolResultContentBlock | ThinkingContentBlock | ImageContentBlock;
 
 /** 标准消息 */
 export interface Message {
@@ -75,12 +91,19 @@ export interface StreamEventUsage {
   completionTokens: number;
 }
 
+/** 思考过程增量 */
+export interface StreamEventThinkingDelta {
+  type: 'thinking_delta';
+  text: string;
+}
+
 export type StreamEvent =
   | StreamEventTextDelta
   | StreamEventToolUse
   | StreamEventDone
   | StreamEventError
-  | StreamEventUsage;
+  | StreamEventUsage
+  | StreamEventThinkingDelta;
 
 // ============================================================
 // Tool 系统

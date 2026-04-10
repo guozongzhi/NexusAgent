@@ -1,140 +1,135 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+/**
+ * useAgentLoop — Agent 循环编排 Hook
+ *
+ * 重构版：降级为薄编排层（~200行），所有业务逻辑委托到核心模块：
+ * - AgentState: 集中状态管理
+ * - MessageReducer: 不可变消息操作
+ * - StreamProcessor: 流式 buffer
+ * - ToolRouter: 工具调度
+ * - PermissionManager: 权限判定
+ * - InterruptController: 中断控制
+ */
+import { useState, useEffect, useRef, useCallback, useSyncExternalStore } from 'react';
 import { useApp } from 'ink';
 import { QueryEngine } from '../QueryEngine.ts';
 import { loadSession, saveSession, getCurrentSessionId } from '../services/history/sessionStore.ts';
 import { loadConfig } from '../config.ts';
 import { parseAndRouteCommand } from '../commands/router.ts';
 import { createAdapter } from '../services/api/adapterFactory.ts';
-import type { Message, ToolUseContext, LLMAdapter } from '../types/index.ts';
+import type { Message, LLMAdapter } from '../types/index.ts';
 import { buildSystemPrompt, buildSystemPromptAsync } from '../context.ts';
-import { getAllFunctionDefs, getTool } from '../tools/index.ts';
+import { getAllFunctionDefs } from '../tools/index.ts';
 import type { SpinnerMode } from '../components/Spinner.tsx';
 import { hasCompletedOnboarding } from '../components/Onboarding.tsx';
 import { truncateMessages } from '../services/history/tokenWindow.ts';
 import { autoCompactIfNeeded, createAutoCompactState } from '../services/compact/index.ts';
-import { isToolAutoApproved } from '../security/permissionStore.ts';
 import { mcpManager } from '../services/mcp/McpClientManager.ts';
-import { READ_ONLY_TOOLS } from '../main.tsx';
 
-// ─── 类型 ──────────────────────────────────────────────
-export type CompletedMessage = {
-  id: number;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-};
+// 核心模块
+import { AgentState } from '../core/AgentState.ts';
+import {
+  appendMessage, appendUserMessage, appendSystemMessage, appendAssistantMessage,
+  addToolExecution, completeToolExecution,
+  type CompletedMessage, type ToolExecution, type ApprovalRequest,
+} from '../core/MessageReducer.ts';
+import { StreamProcessor } from '../core/StreamProcessor.ts';
+import { ToolRouter } from '../core/ToolRouter.ts';
+import { PermissionManager } from '../core/PermissionManager.ts';
+import { InterruptController } from '../core/InterruptController.ts';
 
-export type ToolExecution = {
-  id: string;
-  name: string;
-  args: any;
-  status: 'running' | 'success' | 'error';
-  result?: string;
-};
+// 重导出类型（保持外部 API 兼容）
+export type { CompletedMessage, ToolExecution, ApprovalRequest };
 
-export type ApprovalRequest = {
-  toolName: string;
-  argsSummary: string;
-  resolve: (approved: boolean) => void;
-  reject: () => void;
-};
-
-let _msgIdCounter = 0;
-export function nextMsgId(): number {
-  return ++_msgIdCounter;
-}
-
-export function useAgentLoop({ 
-  oneShotQuery, 
+export function useAgentLoop({
+  oneShotQuery,
   skipPermissions,
-  cwd
-}: { 
+  cwd,
+}: {
   oneShotQuery?: string;
   skipPermissions?: boolean;
   cwd: string;
 }) {
   const { exit } = useApp();
 
-  const [completedMessages, setCompletedMessages] = useState<CompletedMessage[]>([]);
-  const [inputValue, setInputValue] = useState(oneShotQuery || '');
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [streamingText, setStreamingText] = useState('');
-  const [spinnerMode, setSpinnerMode] = useState<SpinnerMode | 'idle'>('idle');
-  const [toolExecutions, setToolExecutions] = useState<ToolExecution[]>([]);
-  const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(null);
-  const [ready, setReady] = useState(false);
-  const [tokenCount, setTokenCount] = useState(0);
-  const [modelName, setModelName] = useState('active');
-  const [showOnboarding, setShowOnboarding] = useState(() => !hasCompletedOnboarding());
-  const [apiReady, setApiReady] = useState(false);
-  const [apiError, setApiError] = useState<string | undefined>();
-
+  // ─── 核心模块实例（进程生命周期）───────────────────
+  const stateRef = useRef(new AgentState());
+  const interruptRef = useRef(new InterruptController());
   const engineRef = useRef<QueryEngine | null>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
   const historyRef = useRef<Message[]>([]);
   const autoCompactStateRef = useRef(createAutoCompactState());
   const adapterRef = useRef<LLMAdapter | null>(null);
+  const permissionManagerRef = useRef<PermissionManager | null>(null);
+  const toolRouterRef = useRef<ToolRouter | null>(null);
 
-  const streamBufferRef = useRef('');
-  const streamFlushRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isFirstChunkRef = useRef(true);
+  // StreamProcessor 需要和 React 状态桥接
+  const streamProcessorRef = useRef<StreamProcessor | null>(null);
 
-  const flushStreamBuffer = useCallback(() => {
-    if (streamBufferRef.current) {
-      const chunk = streamBufferRef.current;
-      streamBufferRef.current = '';
-      setStreamingText(prev => prev + chunk);
-    }
-  }, []);
+  // ─── React 状态桥接（订阅 AgentState）──────────────
+  const agentState = stateRef.current;
 
-  const interrupt = useCallback(() => {
-    if (isProcessing && abortControllerRef.current) {
-      setCompletedMessages(prev => [
-        ...prev,
-        { id: nextMsgId(), role: 'system', content: '[WARNING] 用户已中断当前操作。' }
-      ]);
-      abortControllerRef.current.abort();
-    } else {
-      exit();
-      process.exit(0);
-    }
-  }, [isProcessing, exit]);
+  // 使用 useSyncExternalStore 桥接外部状态到 React
+  const snapshot = useSyncExternalStore(
+    useCallback((cb: () => void) => agentState.subscribe(cb), [agentState]),
+    useCallback(() => agentState.getState(), [agentState]),
+  );
 
-  // 1. 初始化
+  // ─── 初始化 ────────────────────────────────────────
   useEffect(() => {
     const init = async () => {
       const conf = await loadConfig();
-      const apiKey = conf.apiKey || process.env.OPENAI_API_KEY || 'UNSET_KEY_WAITING_FOR_USER';
-
       const adapter = createAdapter(conf);
       adapterRef.current = adapter;
       engineRef.current = new QueryEngine(adapter);
 
+      // 初始化权限管理器 + 工具路由器
+      permissionManagerRef.current = new PermissionManager({
+        skipPermissions: skipPermissions ?? false,
+        cwd,
+      });
+      toolRouterRef.current = new ToolRouter(permissionManagerRef.current);
+
+      // 初始化流处理器
+      streamProcessorRef.current = new StreamProcessor({
+        onFlush: (chunk) => {
+          const prev = agentState.getState().streamingText;
+          agentState.setState({ streamingText: prev + chunk });
+        },
+      });
+
+      // 恢复会话
       const history = await loadSession(cwd);
       if (history && history.length > 0) {
         historyRef.current = history;
-        setCompletedMessages(prev => [
-          ...prev,
-          { id: nextMsgId(), role: 'system', content: `已恢复 \`${cwd}\` 的历史会话。` },
-        ]);
+        agentState.setState({
+          completedMessages: appendSystemMessage(
+            agentState.getState().completedMessages,
+            `已恢复 \`${cwd}\` 的历史会话。`
+          ),
+        });
       }
 
       const actualModel = conf.model || process.env.OPENAI_MODEL || 'gpt-4o';
-      setModelName(actualModel);
+      agentState.setState({ modelName: actualModel });
 
       if (conf.mcpServers) {
         await mcpManager.connectAll(conf.mcpServers);
       }
 
+      const apiKey = conf.apiKey || process.env.OPENAI_API_KEY || 'UNSET_KEY_WAITING_FOR_USER';
       if (apiKey && apiKey !== 'UNSET_KEY_WAITING_FOR_USER') {
-        setApiReady(true);
+        agentState.setState({ apiReady: true });
       } else {
-        setApiError('API Key 未配置');
+        agentState.setState({ apiError: 'API Key 未配置' });
       }
 
-      setReady(true);
+      agentState.setState({
+        ready: true,
+        showOnboarding: !hasCompletedOnboarding(),
+      });
     };
     init();
 
+    // 清理
     const shutdownHandler = () => {
       mcpManager.closeAll().catch(() => {});
     };
@@ -143,104 +138,118 @@ export function useAgentLoop({
     process.on('SIGTERM', shutdownHandler);
 
     return () => {
-      if (streamFlushRef.current) {
-        clearTimeout(streamFlushRef.current);
-        streamFlushRef.current = null;
-      }
+      streamProcessorRef.current?.dispose();
       process.removeListener('exit', shutdownHandler);
       process.removeListener('SIGINT', shutdownHandler);
       process.removeListener('SIGTERM', shutdownHandler);
     };
   }, [cwd]);
 
-  // One shot
+  // ─── One-shot 模式 ──────────────────────────────────
   const oneShotFiredRef = useRef(false);
   useEffect(() => {
-    if (ready && oneShotQuery && !oneShotFiredRef.current) {
+    if (snapshot.ready && oneShotQuery && !oneShotFiredRef.current) {
       oneShotFiredRef.current = true;
       handleSubmit(oneShotQuery);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, oneShotQuery]);
+  }, [snapshot.ready, oneShotQuery]);
 
+  // ─── 中断处理 ──────────────────────────────────────
+  const interrupt = useCallback(() => {
+    if (snapshot.isProcessing && interruptRef.current.isActive) {
+      agentState.setState({
+        completedMessages: appendSystemMessage(
+          agentState.getState().completedMessages,
+          '[WARNING] 用户已中断当前操作。'
+        ),
+      });
+      interruptRef.current.abort();
+    } else {
+      exit();
+      process.exit(0);
+    }
+  }, [snapshot.isProcessing, exit]);
+
+  // ─── 提交处理 ──────────────────────────────────────
   const handleSubmit = async (value: string) => {
     let query = value;
-    if (!query.trim() || isProcessing || pendingApproval) return;
+    if (!query.trim() || snapshot.isProcessing || snapshot.pendingApproval) return;
 
+    // 斜杠命令处理
     let resp: any;
     if (query.startsWith('/')) {
       resp = await parseAndRouteCommand(query, {
         exit,
-        clear: () => setCompletedMessages([]),
+        clear: () => agentState.setState({ completedMessages: [] }),
         reloadConfig: async () => {
           const newConf = await loadConfig();
-          const newBase = newConf.baseUrl || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
           const newAdapter = createAdapter(newConf);
+          adapterRef.current = newAdapter;
           engineRef.current = new QueryEngine(newAdapter);
           const actualModel = newConf.model || process.env.OPENAI_MODEL || 'gpt-4o';
-          setModelName(actualModel);
+          agentState.setState({ modelName: actualModel });
 
           if (newConf.mcpServers) {
             await mcpManager.closeAll();
             await mcpManager.connectAll(newConf.mcpServers);
           }
 
-          setCompletedMessages(prev => [
-            ...prev,
-            { id: nextMsgId(), role: 'system', content: `配置已热重载！\n当前 BaseURL: ${newBase}\n当前模型: ${actualModel}` },
-          ]);
+          const newBase = newConf.baseUrl || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
+          agentState.setState({
+            completedMessages: appendSystemMessage(
+              agentState.getState().completedMessages,
+              `配置已热重载！\n当前 BaseURL: ${newBase}\n当前模型: ${actualModel}`
+            ),
+          });
         },
         getHistory: () => historyRef.current,
         setHistory: (msgs) => { historyRef.current = msgs; },
-        getTokenCount: () => tokenCount,
-        getModel: () => modelName,
+        getTokenCount: () => agentState.getState().tokenCount,
+        getModel: () => agentState.getState().modelName,
         extractWorkspaceContext: async () => {
           if (!engineRef.current) return null;
-          setIsProcessing(true);
-          setSpinnerMode('thinking');
+          agentState.setState({ isProcessing: true, spinnerMode: 'thinking' });
           try {
             const { extractProjectFacts } = await import('../services/memory/WorkspaceGraph.ts');
-            return await extractProjectFacts(cwd, engineRef.current, modelName);
+            return await extractProjectFacts(cwd, engineRef.current, agentState.getState().modelName);
           } finally {
-            setIsProcessing(false);
-            setSpinnerMode('idle');
+            agentState.setState({ isProcessing: false, spinnerMode: 'idle' });
           }
-        }
+        },
       });
 
       if (resp.rewrittenQuery) {
-        setCompletedMessages(prev => [
-          ...prev,
-          { id: nextMsgId(), role: 'user', content: query },
-          { id: nextMsgId(), role: 'system', content: `已触发技能，引擎转入自动化工作流。` },
-        ]);
+        let msgs = agentState.getState().completedMessages;
+        msgs = appendUserMessage(msgs, query);
+        msgs = appendSystemMessage(msgs, '已触发技能，引擎转入自动化工作流。');
+        agentState.setState({ completedMessages: msgs, inputValue: '' });
         query = resp.rewrittenQuery;
-        setInputValue('');
       } else {
-        setCompletedMessages(prev => [
-          ...prev,
-          { id: nextMsgId(), role: 'user', content: query },
-          { id: nextMsgId(), role: 'system', content: resp.output || '' },
-        ]);
-        setInputValue('');
+        let msgs = agentState.getState().completedMessages;
+        msgs = appendUserMessage(msgs, query);
+        msgs = appendSystemMessage(msgs, resp.output || '');
+        agentState.setState({ completedMessages: msgs, inputValue: '' });
         return;
       }
     }
 
+    // 普通查询
     if (!resp?.rewrittenQuery && !query.startsWith('/')) {
-      setInputValue('');
-      setCompletedMessages(prev => [
-        ...prev,
-        { id: nextMsgId(), role: 'user', content: query },
-      ]);
+      agentState.setState({
+        inputValue: '',
+        completedMessages: appendUserMessage(agentState.getState().completedMessages, query),
+      });
     }
 
-    setIsProcessing(true);
-    setSpinnerMode('thinking');
-    setToolExecutions([]);
-    setStreamingText('');
-    isFirstChunkRef.current = true;
-    abortControllerRef.current = new AbortController();
+    // 开始处理
+    agentState.setState({
+      isProcessing: true,
+      spinnerMode: 'thinking',
+      toolExecutions: [],
+      streamingText: '',
+    });
+    streamProcessorRef.current?.reset();
+    const abortController = interruptRef.current.create();
 
     try {
       if (!engineRef.current) throw new Error('Engine not initialized. 请运行 /config set apiKey <your-key> 配置 API Key。');
@@ -250,7 +259,12 @@ export function useAgentLoop({
         sysPrompt = await buildSystemPromptAsync(cwd);
       } catch (promptErr: any) {
         sysPrompt = buildSystemPrompt(cwd);
-        setCompletedMessages(prev => [...prev, { id: nextMsgId(), role: 'system', content: `⚠ System Prompt 构建异常 (${promptErr.message})，已降级处理。` }]);
+        agentState.setState({
+          completedMessages: appendSystemMessage(
+            agentState.getState().completedMessages,
+            `⚠ System Prompt 构建异常 (${promptErr.message})，已降级处理。`
+          ),
+        });
       }
 
       let conf;
@@ -264,6 +278,7 @@ export function useAgentLoop({
       const actualModel = conf.model || process.env.OPENAI_MODEL || 'gpt-4o';
       let workingMessages = [...historyRef.current];
 
+      // 自动压缩
       if (adapterRef.current) {
         const acResult = await autoCompactIfNeeded(
           workingMessages,
@@ -273,10 +288,12 @@ export function useAgentLoop({
             model: actualModel,
             systemPrompt: sysPrompt,
             onProgress: (status) => {
-              setCompletedMessages(prev => [
-                ...prev,
-                { id: nextMsgId(), role: 'system', content: status },
-              ]);
+              agentState.setState({
+                completedMessages: appendSystemMessage(
+                  agentState.getState().completedMessages,
+                  status,
+                ),
+              });
             },
           },
         );
@@ -285,139 +302,133 @@ export function useAgentLoop({
       }
 
       const trimmedMessages = truncateMessages(workingMessages);
+
+      // 收集工具定义
       const localToolDefs = getAllFunctionDefs();
       const mcpToolsRaw = await mcpManager.getAllTools();
-      const mcpToolDefs: import('../types/index.ts').OpenAIFunctionDef[] = mcpToolsRaw.map(t => ({
-        type: 'function',
+      const mcpToolDefs = mcpToolsRaw.map(t => ({
+        type: 'function' as const,
         function: {
           name: `mcp__${t.serverName}__${t.toolName}`,
           description: `[外部 MCP 工具: ${t.serverName}] ${t.description}`,
           parameters: t.inputSchema,
-        }
+        },
       }));
       const toolDefs = [...localToolDefs, ...mcpToolDefs];
 
+      // 调用 QueryEngine
       const response = await engineRef.current.run({
         systemPrompt: sysPrompt,
         model: actualModel,
         messages: trimmedMessages,
         toolDefs,
+        toolRouter: toolRouterRef.current ?? undefined,
         toolContext: {
           cwd,
           sessionId: getCurrentSessionId(),
           isAuthorized: skipPermissions ?? false,
-        } as ToolUseContext,
-        abortSignal: abortControllerRef.current.signal,
+        },
+        abortSignal: abortController.signal,
         onTextDelta: (delta: string) => {
-          streamBufferRef.current += delta;
-          if (isFirstChunkRef.current) {
-            isFirstChunkRef.current = false;
-            flushStreamBuffer();
-          } else if (!streamFlushRef.current) {
-            streamFlushRef.current = setTimeout(() => {
-              flushStreamBuffer();
-              streamFlushRef.current = null;
-            }, 50);
-          }
+          streamProcessorRef.current?.push(delta);
         },
         onToolStart: (name: string, args: any) => {
-          setSpinnerMode('tool' as SpinnerMode);
-          setToolExecutions(prev => [...prev, { id: String(Date.now()), name, args, status: 'running' }]);
+          agentState.setState({
+            spinnerMode: 'tool' as SpinnerMode,
+            toolExecutions: addToolExecution(agentState.getState().toolExecutions, name, args),
+          });
         },
-        onToolEnd: (name: string, result: any, isError: boolean) => {
-          setSpinnerMode('thinking');
-          setToolExecutions(prev =>
-            prev.map(t =>
-              t.name === name && t.status === 'running'
-                ? { ...t, status: isError ? 'error' : 'success', result: JSON.stringify(result) }
-                : t
-            )
-          );
+        onToolEnd: (name: string, result: any, isError: boolean, durationMs: number) => {
+          agentState.setState({
+            spinnerMode: 'thinking',
+            toolExecutions: completeToolExecution(agentState.getState().toolExecutions, name, JSON.stringify(result), isError),
+          });
         },
         onToolApprovalRequest: async (toolName: string, args: any) => {
-          if (skipPermissions) return true;
-
-          const toolInstance = getTool(toolName);
-          const isMcp = toolName.startsWith('mcp__');
-          const rawAuth = isMcp ? 'requires_confirm' : (toolInstance?.authType || (toolInstance?.isReadOnly ? 'safe' : 'requires_confirm'));
-          const authType = READ_ONLY_TOOLS.includes(toolName) && !isMcp ? 'safe' : rawAuth;
-          
-          if (authType === 'safe') return true;
-          if (authType !== 'dangerous') {
-            const isApproved = await isToolAutoApproved(toolName, cwd);
-            if (isApproved) return true;
-          }
+          // 权限逻辑已由 ToolRouter + PermissionManager 处理
+          // 此处仅提供 UI 交互桥接
           return new Promise<boolean>((resolve, reject) => {
-            setPendingApproval({ toolName, argsSummary: JSON.stringify(args), resolve, reject });
+            agentState.setState({
+              pendingApproval: { toolName, argsSummary: JSON.stringify(args), fullArgs: args, resolve, reject },
+            });
           });
         },
       });
 
-      if (streamFlushRef.current) {
-        clearTimeout(streamFlushRef.current);
-        streamFlushRef.current = null;
-      }
-      flushStreamBuffer();
-      streamBufferRef.current = '';
+      // 完成处理
+      streamProcessorRef.current?.finalize();
 
       const answerText = response.text || '';
-      setCompletedMessages(prev => [
-        ...prev,
-        { id: nextMsgId(), role: 'assistant', content: answerText },
-      ]);
+      agentState.setState({
+        completedMessages: appendAssistantMessage(agentState.getState().completedMessages, answerText),
+      });
 
       historyRef.current.push({ role: 'assistant', content: answerText });
       await saveSession(cwd, historyRef.current);
 
       if (response.usage) {
-        setTokenCount(prev => prev + response.usage.promptTokens + response.usage.completionTokens);
+        const newTokenCount = snapshot.tokenCount + response.usage.promptTokens + response.usage.completionTokens;
+        agentState.setState({ tokenCount: newTokenCount });
+
         import('../services/telemetry/CostTracker.ts').then(({ costTracker }) => {
-          costTracker.recordUsage(actualModel, {
+          const record = costTracker.recordUsage(actualModel, {
             promptTokens: response.usage.promptTokens,
             completionTokens: response.usage.completionTokens,
-            totalTokens: response.usage.promptTokens + response.usage.completionTokens
+            totalTokens: response.usage.promptTokens + response.usage.completionTokens,
           });
+          agentState.setState({ sessionCostUsd: agentState.getState().sessionCostUsd + record.costUsd });
         });
       }
     } catch (err: any) {
-      if (err.name !== 'AbortError' && !err.message.includes('abort')) {
-        setCompletedMessages(prev => [
-          ...prev,
-          { id: nextMsgId(), role: 'system', content: `执行出错: ${err.message}` },
-        ]);
+      if (err.name !== 'AbortError' && !err.message?.includes('abort')) {
+        agentState.setState({
+          completedMessages: appendSystemMessage(
+            agentState.getState().completedMessages,
+            `执行出错: ${err.message}`
+          ),
+        });
       }
     } finally {
-      if (streamFlushRef.current) {
-        clearTimeout(streamFlushRef.current);
-        streamFlushRef.current = null;
-      }
-      streamBufferRef.current = '';
-      setIsProcessing(false);
-      setSpinnerMode('idle');
-      setStreamingText('');
-      setToolExecutions([]);
+      streamProcessorRef.current?.finalize();
+      interruptRef.current.reset();
+      agentState.setState({
+        isProcessing: false,
+        spinnerMode: 'idle',
+        streamingText: '',
+        toolExecutions: [],
+      });
     }
   };
 
+  // ─── 返回接口（保持向后兼容）──────────────────────
   return {
-    ready,
-    apiReady,
-    apiError,
-    showOnboarding,
-    setShowOnboarding,
-    modelName,
-    completedMessages,
-    setCompletedMessages,
-    inputValue,
-    setInputValue,
-    isProcessing,
-    streamingText,
-    spinnerMode,
-    toolExecutions,
-    pendingApproval,
-    setPendingApproval,
-    tokenCount,
+    ready: snapshot.ready,
+    apiReady: snapshot.apiReady,
+    apiError: snapshot.apiError,
+    showOnboarding: snapshot.showOnboarding,
+    setShowOnboarding: (v: boolean) => agentState.setState({ showOnboarding: v }),
+    modelName: snapshot.modelName,
+    completedMessages: snapshot.completedMessages,
+    setCompletedMessages: (msgs: CompletedMessage[] | ((prev: CompletedMessage[]) => CompletedMessage[])) => {
+      if (typeof msgs === 'function') {
+        agentState.setState({ completedMessages: msgs(agentState.getState().completedMessages) });
+      } else {
+        agentState.setState({ completedMessages: msgs });
+      }
+    },
+    inputValue: snapshot.inputValue,
+    setInputValue: (v: string) => agentState.setState({ inputValue: v }),
+    isProcessing: snapshot.isProcessing,
+    streamingText: snapshot.streamingText,
+    spinnerMode: snapshot.spinnerMode,
+    toolExecutions: snapshot.toolExecutions,
+    pendingApproval: snapshot.pendingApproval,
+    setPendingApproval: (v: ApprovalRequest | null) => agentState.setState({ pendingApproval: v }),
+    tokenCount: snapshot.tokenCount,
+    contextWindow: snapshot.contextWindow,
+    contextUsedTokens: snapshot.contextUsedTokens,
+    sessionCostUsd: snapshot.sessionCostUsd,
     handleSubmit,
-    interrupt
+    interrupt,
   };
 }

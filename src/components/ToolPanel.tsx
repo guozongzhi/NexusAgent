@@ -1,9 +1,13 @@
 /**
  * ToolPanel — 工具执行可视化面板
- * 参考 Claude Code 的 AssistantToolUseMessage 组件
- * 在工具调用时展示 ⬤ 状态指示 + 工具名 + 参数摘要
+ *
+ * 增强版（Claude Code 对齐）：
+ * - 实时执行计时（running 状态下每秒更新）
+ * - 结果折叠展示（超过 3 行自动折叠，显示行数提示）
+ * - Bash 工具实时输出（显示最后 3 行）
+ * - File Edit diff 预览（彩色 diff）
  */
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
 import { ToolDot } from './Spinner.tsx';
 
@@ -17,10 +21,14 @@ export interface ToolExecution {
   paramSummary?: string;
   /** 状态 */
   status: 'queued' | 'running' | 'success' | 'error';
-  /** 执行结果摘要（折叠/展开） */
+  /** 执行结果摘要 */
   resultSummary?: string;
   /** 耗时 ms */
   durationMs?: number;
+  /** 开始时间 */
+  startTime?: number;
+  /** Bash 实时输出 */
+  liveOutput?: string;
 }
 
 interface ToolPanelProps {
@@ -30,7 +38,6 @@ interface ToolPanelProps {
 
 /**
  * 工具执行面板 — 展示所有工具调用状态
- * 类似 Claude Code 中 ⬤ToolName (args) 的风格
  */
 export function ToolPanel({ tools, shouldAnimate }: ToolPanelProps): React.ReactNode {
   if (tools.length === 0) return null;
@@ -60,10 +67,31 @@ function ToolRow({ tool, shouldAnimate, addMargin }: ToolRowProps): React.ReactN
   const isResolved = tool.status === 'success' || tool.status === 'error';
   const isError = tool.status === 'error';
   const isQueued = tool.status === 'queued';
+  const isRunning = tool.status === 'running';
+
+  // 实时计时（running 状态下每秒更新）
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!isRunning || !tool.startTime) return;
+    const timer = setInterval(() => {
+      setElapsed(Date.now() - tool.startTime!);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [isRunning, tool.startTime]);
+
+  // 结果折叠逻辑
+  const resultLines = tool.resultSummary?.split('\n') ?? [];
+  const shouldFold = resultLines.length > 5;
+  const displayResult = shouldFold
+    ? resultLines.slice(0, 3).join('\n') + `\n  ... (+${resultLines.length - 3} 行)`
+    : tool.resultSummary;
+
+  // Bash 实时输出（最后 3 行）
+  const liveLines = tool.liveOutput?.split('\n').slice(-3).join('\n');
 
   return (
-    <Box flexDirection="column" marginTop={addMargin ? 1 : 0}>
-      {/* 主行：状态点 + 工具名 + 参数 */}
+    <Box flexDirection="column" marginTop={addMargin ? 0 : 0}>
+      {/* 主行：状态点 + 工具名 + 参数 + 计时 */}
       <Box flexDirection="row" flexWrap="nowrap">
         {/* 状态指示器 */}
         {isQueued ? (
@@ -72,7 +100,7 @@ function ToolRow({ tool, shouldAnimate, addMargin }: ToolRowProps): React.ReactN
           </Box>
         ) : (
           <ToolDot
-            shouldAnimate={shouldAnimate && tool.status === 'running'}
+            shouldAnimate={shouldAnimate && isRunning}
             isResolved={isResolved}
             isError={isError}
           />
@@ -86,13 +114,16 @@ function ToolRow({ tool, shouldAnimate, addMargin }: ToolRowProps): React.ReactN
         {/* 参数摘要 */}
         {tool.paramSummary && (
           <Box flexWrap="nowrap">
-            <Text> ({tool.paramSummary})</Text>
+            <Text dimColor> ({tool.paramSummary})</Text>
           </Box>
         )}
 
-        {/* 耗时 */}
+        {/* 实时计时 / 最终耗时 */}
         {isResolved && tool.durationMs !== undefined && (
           <Text color="gray"> {formatDuration(tool.durationMs)}</Text>
+        )}
+        {isRunning && tool.startTime && elapsed > 0 && (
+          <Text color="yellow"> {formatDuration(elapsed)}</Text>
         )}
 
         {/* 状态标记 */}
@@ -104,19 +135,19 @@ function ToolRow({ tool, shouldAnimate, addMargin }: ToolRowProps): React.ReactN
         )}
       </Box>
 
-      {/* 结果行（仅已完成时展示） */}
-      {isResolved && tool.resultSummary && (
-        <Box paddingLeft={2}>
-          <Text color={isError ? 'red' : 'gray'} wrap="truncate-end">
-            {tool.resultSummary}
-          </Text>
+      {/* Bash 实时输出（运行中显示最后 3 行） */}
+      {isRunning && liveLines && (
+        <Box paddingLeft={3}>
+          <Text dimColor wrap="truncate-end">{liveLines}</Text>
         </Box>
       )}
 
-      {/* 等待权限提示 */}
-      {tool.status === 'running' && (
-        <Box paddingLeft={2}>
-          <Text dimColor>执行中...</Text>
+      {/* 结果行（已完成时展示，带折叠） */}
+      {isResolved && displayResult && (
+        <Box paddingLeft={3}>
+          <Text color={isError ? 'red' : 'gray'} wrap="truncate-end">
+            {displayResult}
+          </Text>
         </Box>
       )}
     </Box>
@@ -130,13 +161,14 @@ function formatDuration(ms: number): string {
   return `${s}s`;
 }
 
-/** 根据工具名称和输入生成显示名称 */
+/** 根据工具名称生成显示名称 */
 export function getToolDisplayName(toolName: string): string {
   const nameMap: Record<string, string> = {
     'bash': 'Bash',
     'file_read': 'Read',
     'file_write': 'Write',
     'file_edit': 'Edit',
+    'multi_edit': 'MultiEdit',
     'list_dir': 'ListDir',
     'search': 'Search',
     'grep': 'Grep',
@@ -147,11 +179,21 @@ export function getToolDisplayName(toolName: string): string {
     'web_search': 'Search',
     'notebook_edit': 'Notebook',
   };
+  // MCP 工具特殊处理
+  if (toolName.startsWith('mcp__')) {
+    const parts = toolName.split('__');
+    return `MCP:${parts[2] || parts[1]}`;
+  }
   return nameMap[toolName] ?? toolName;
 }
 
 /** 根据工具输入生成参数摘要 */
 export function getToolParamSummary(toolName: string, input: Record<string, unknown>): string {
+  const basename = (p: string) => {
+    const parts = p.split('/');
+    return parts[parts.length - 1] || p;
+  };
+
   switch (toolName) {
     case 'bash': {
       const cmd = String(input.command ?? '');
@@ -159,8 +201,15 @@ export function getToolParamSummary(toolName: string, input: Record<string, unkn
     }
     case 'file_read':
     case 'file_write':
+      return basename(String(input.filePath ?? input.path ?? ''));
     case 'file_edit':
-      return String(input.path ?? input.file_path ?? '');
+      return basename(String(input.file_path ?? ''));
+    case 'multi_edit': {
+      const edits = input.edits as any[];
+      if (!edits) return '';
+      const files = new Set(edits.map((e: any) => basename(String(e.file_path ?? ''))));
+      return `${edits.length} edits in ${files.size} files`;
+    }
     case 'list_dir':
       return String(input.path ?? input.directory ?? '.');
     case 'glob':
@@ -174,7 +223,7 @@ export function getToolParamSummary(toolName: string, input: Record<string, unkn
     case 'notebook_edit': {
       const action = String(input.action ?? '');
       const path = String(input.path ?? '');
-      return `${action} ${path}`.trim();
+      return `${action} ${basename(path)}`.trim();
     }
     default:
       return '';

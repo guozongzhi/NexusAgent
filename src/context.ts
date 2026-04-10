@@ -8,6 +8,37 @@ import { plannerState } from './services/agent/planner.ts';
 import { getRelevantMemories } from './services/memory/memoryStore.ts';
 import os from 'node:os';
 
+// ─── 模型能力矩阵 ──────────────────────────────────────
+export interface ModelCapabilities {
+  contextWindow: number;
+  supportsVision: boolean;
+  supportsThinking: boolean;
+  maxOutputTokens: number;
+}
+
+const MODEL_CAPABILITIES: Record<string, ModelCapabilities> = {
+  'gpt-4o':           { contextWindow: 128_000, supportsVision: true,  supportsThinking: false, maxOutputTokens: 16_384 },
+  'gpt-4o-mini':      { contextWindow: 128_000, supportsVision: true,  supportsThinking: false, maxOutputTokens: 16_384 },
+  'gpt-4-turbo':      { contextWindow: 128_000, supportsVision: true,  supportsThinking: false, maxOutputTokens: 4_096 },
+  'gpt-3.5-turbo':    { contextWindow: 16_385,  supportsVision: false, supportsThinking: false, maxOutputTokens: 4_096 },
+  'claude-3-5-sonnet': { contextWindow: 200_000, supportsVision: true, supportsThinking: true,  maxOutputTokens: 8_192 },
+  'claude-3-5-haiku':  { contextWindow: 200_000, supportsVision: true, supportsThinking: false, maxOutputTokens: 8_192 },
+  'deepseek-chat':    { contextWindow: 128_000, supportsVision: false, supportsThinking: true,  maxOutputTokens: 8_192 },
+  'deepseek-coder':   { contextWindow: 128_000, supportsVision: false, supportsThinking: false, maxOutputTokens: 8_192 },
+};
+
+/** 获取模型能力（模糊匹配） */
+export function getModelCapabilities(modelName: string): ModelCapabilities {
+  // 精确匹配
+  if (MODEL_CAPABILITIES[modelName]) return MODEL_CAPABILITIES[modelName];
+  // 前缀匹配
+  for (const [key, caps] of Object.entries(MODEL_CAPABILITIES)) {
+    if (modelName.startsWith(key)) return caps;
+  }
+  // 默认值
+  return { contextWindow: 128_000, supportsVision: false, supportsThinking: false, maxOutputTokens: 4_096 };
+}
+
 /** 运行时检测操作系统 */
 function detectOS(): string {
   const platform = os.platform();
@@ -83,7 +114,8 @@ export function buildSystemPrompt(cwd: string): string {
 - **bash**: 执行 Shell 命令（安装依赖、运行脚本、查看进程等）
 - **file_read**: 读取文件内容（支持行范围截取）
 - **file_write**: 创建新文件或覆盖写入
-- **file_edit**: 精确编辑现有文件（提供 old_string + new_string）
+- **file_edit**: 精确编辑现有文件（提供 old_string + new_string，支持模糊匹配）
+- **multi_edit**: 批量编辑多个文件的多个位置（事务语义）
 - **list_dir**: 列出目录内容（支持递归模式）
 - **glob**: 按 glob 模式搜索文件路径
 - **grep**: 按正则表达式全局搜索文件内容
