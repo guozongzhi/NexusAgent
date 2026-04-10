@@ -320,6 +320,8 @@ export function useAgentLoop({
       let localEstimatedPrompt = Math.ceil(JSON.stringify(trimmedMessages).length / 4);
       let localEstimatedCompletion = 0;
       let generatedChars = 0;
+      let pendingAddedTokens = 0;
+      let lastTokenUpdate = Date.now();
 
       const preRunState = agentState.getState();
       agentState.setState({
@@ -343,18 +345,23 @@ export function useAgentLoop({
         onTextDelta: (delta: string) => {
           streamProcessorRef.current?.push(delta);
           
-          // 2. 流式阶段实时模拟 Token 下发累加
+          // 2. 流式阶段实时模拟 Token 下发累加（增加 Throttle 避免渲染狂闪）
           generatedChars += delta.length;
           if (generatedChars >= 4) {
             const addedTokens = Math.floor(generatedChars / 4);
             generatedChars %= 4;
             localEstimatedCompletion += addedTokens;
-            
+            pendingAddedTokens += addedTokens;
+          }
+          
+          if (pendingAddedTokens > 0 && Date.now() - lastTokenUpdate > 100) {
             const curState = agentState.getState();
             agentState.setState({
-              completionTokens: curState.completionTokens + addedTokens,
-              tokenCount: curState.tokenCount + addedTokens,
+              completionTokens: curState.completionTokens + pendingAddedTokens,
+              tokenCount: curState.tokenCount + pendingAddedTokens,
             });
+            pendingAddedTokens = 0;
+            lastTokenUpdate = Date.now();
           }
         },
         onToolStart: (name: string, args: any) => {

@@ -175,7 +175,7 @@ export function renderMarkdown(text: string): string {
   });
 
   // 8. Headers # Header
-  output = output.replace(/^(#{1,6})\s+(.+)$/gm, (_, hashes, title) => {
+  output = output.replace(/^[ \t]*(#{1,6})\s+(.+)$/gm, (_, hashes, title) => {
     const level = hashes.length;
     if (level === 1) return chalk.bold.underline.white(title);
     if (level === 2) return chalk.bold.white(title);
