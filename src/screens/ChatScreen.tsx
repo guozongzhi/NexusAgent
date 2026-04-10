@@ -24,7 +24,7 @@ import { addAutoApprovedTool } from '../security/permissionStore.ts';
 // ─── 消息块渲染（用于 Static 内的已完成消息）──────────
 function StaticMessageBlock({ item }: { item: CompletedMessage }) {
   if (item.role === 'user') {
-    const lines = item.content.split('\n');
+    const lines = item.content.trimEnd().split('\n');
     const termWidth = process.stdout.columns || 80;
     
     return (
