@@ -11,7 +11,7 @@
 import React from 'react';
 import { Box, Text, Static } from 'ink';
 import { renderMarkdown } from '../utils/markdown.ts';
-import { padToTermWidth } from '../utils/path.ts';
+import { displayWidth } from '../utils/path.ts';
 import { StatusBar } from '../components/StatusBar.tsx';
 import { PermissionPrompt } from '../components/PermissionPrompt.tsx';
 import { ToolPanel, getToolDisplayName, getToolParamSummary } from '../components/ToolPanel.tsx';
@@ -32,8 +32,8 @@ function StaticMessageBlock({ item }: { item: CompletedMessage }) {
         {lines.map((line, idx) => {
           const prefix = idx === 0 ? ' >  ' : '    ';
           const body = prefix + line;
-          // +1 为安全余量，防止终端硬回车断行
-          const padLen = Math.max(0, termWidth - body.length - 1); 
+          // 使用终端真实显示宽度（兼容中日韩全角字符与 Emoji 各占宽2格），防止越界强制折行
+          const padLen = Math.max(0, termWidth - displayWidth(body) - 1); 
           
           return (
             <Text key={idx} backgroundColor="#232323">
