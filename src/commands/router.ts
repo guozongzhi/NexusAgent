@@ -21,6 +21,8 @@ export interface CommandActions {
   getModel: () => string;
   /** 触发工作区图谱提取（记忆抽取） */
   extractWorkspaceContext: () => Promise<string | null>;
+  /** 切换 Agent 运行模式 */
+  setMode: (mode: any) => void;
 }
 
 export interface CommandResult {
@@ -67,6 +69,7 @@ export async function parseAndRouteCommand(query: string, actions: CommandAction
   **/clear**    — 清除当前终端显示与持久化的会话历史
   **/config**   — 动态设置配置项 (例如: \`/config model gemma4:e4b\`)
   **/model**    — 快速切换模型 (例如: \`/model gpt-4o\`)
+  **/mode**     — 切换运行模式 (act/plan/auto-approve)
   **/cwd**      — 显示当前运行的工作区路径
   **/status**   — 显示当前连接状态、模型、token 用量
   **/history**  — 查看当前会话的消息数和 token 估算
@@ -77,6 +80,7 @@ export async function parseAndRouteCommand(query: string, actions: CommandAction
   **/init**     — 初始化项目 NEXUS.md 文件
   **/diff**     — 查看当前 Git 未提交的更改
   **/commit**   — 查看 Git 状态并提示提交
+  **/undo**     — 快速撤销大模型上一次的文件写操作（防呆回滚）
   **/cost**     — 查看本次会话的 Token 耗费
   **/bug**      — 报告 Bug（生成环境诊断信息）
   **/version**  — 显示版本号
@@ -113,6 +117,18 @@ export async function parseAndRouteCommand(query: string, actions: CommandAction
       } catch (err) {
         return { handled: true, output: `模型切换失败: ${String(err)}` };
       }
+    }
+
+    case '/mode': {
+      if (parts.length < 2) {
+        return { handled: true, output: '用法: `/mode <plan|act|auto-approve>`\n- **plan**: 仅允许只读操作，拦截所有写操作。\n- **act**: 默认模式，修改文件需确认。\n- **auto-approve**: 自动通过所有权限确认。' };
+      }
+      const mode = parts[1].toLowerCase();
+      if (['plan', 'act', 'auto-approve'].includes(mode)) {
+        actions.setMode(mode);
+        return { handled: true, output: `Agent 模式已切换为: **${mode.toUpperCase()}**` };
+      }
+      return { handled: true, output: `未知的模式: \`${mode}\`。可用模式: \`plan\`, \`act\`, \`auto-approve\`` };
     }
 
     case '/status': {
@@ -422,6 +438,18 @@ export async function parseAndRouteCommand(query: string, actions: CommandAction
           modelBreakdown || '  (无)',
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
         ].join('\n'),
+      };
+    }
+
+    case '/undo': {
+      const { FileVault } = await import('../services/sandbox/FileVault.ts');
+      const vault = await FileVault.getInstance();
+      const result = await vault.restoreLastSnapshot();
+      return {
+        handled: true,
+        output: result.success 
+          ? `✅ 撤销成功: ${result.message}`
+          : `❌ 撤销失败: ${result.message}`,
       };
     }
 

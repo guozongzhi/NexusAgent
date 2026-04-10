@@ -106,13 +106,16 @@ export const MultiEditTool = registerTool({
         results.push(`✓ ${path.basename(edit.file_path)}: 替换成功`);
       }
 
-      // Phase 3: 原子写入所有文件
+      // Phase 3: 快照备份与原子写入所有文件
+      const { FileVault } = await import('../services/sandbox/FileVault.ts');
+      await (await FileVault.getInstance()).createSnapshot(Array.from(updatedFiles.keys()));
+
       for (const [filePath, content] of updatedFiles) {
         await atomicWrite(filePath, content);
       }
 
       return {
-        output: `批量编辑完成（${edits.length} 处修改，${updatedFiles.size} 个文件）\n${results.join('\n')}`,
+        output: `[INFO] 撤销点已就绪，如遇问题可用 /undo 回滚。\n批量编辑完成（${edits.length} 处修改，${updatedFiles.size} 个文件）\n${results.join('\n')}`,
         isError: false,
       };
 

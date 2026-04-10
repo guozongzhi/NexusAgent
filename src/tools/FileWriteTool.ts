@@ -61,6 +61,9 @@ export const FileWriteTool = registerTool({
     }
 
     try {
+      const { FileVault } = await import('../services/sandbox/FileVault.ts');
+      await (await FileVault.getInstance()).createSnapshot([absPath]);
+
       // 确保父目录存在
       await mkdir(path.dirname(absPath), { recursive: true });
 
@@ -71,7 +74,7 @@ export const FileWriteTool = registerTool({
       const bytes = Buffer.byteLength(input.content, 'utf-8');
 
       return {
-        output: `文件已写入: ${absPath} (${lines} 行, ${bytes} bytes)`,
+        output: `[INFO] 撤销点已就绪，如遇问题可用 /undo 回滚。\n文件已写入: ${absPath} (${lines} 行, ${bytes} bytes)`,
       };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);

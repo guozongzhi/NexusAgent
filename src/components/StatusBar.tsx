@@ -25,6 +25,10 @@ interface StatusBarProps {
   contextUsedTokens?: number;
   /** 本次会话成本 USD */
   sessionCostUsd?: number;
+  /** 后台挂起任务数 */
+  activeBackgroundJobs?: number;
+  /** Agent 运行模式 */
+  agentMode?: any;
 }
 
 /**
@@ -52,7 +56,8 @@ function formatCost(usd: number): string {
 
 export function StatusBar({
   model, cwd, tokenCount, promptTokens = 0, completionTokens = 0, isProcessing,
-  contextWindow = 128_000, contextUsedTokens = 0, sessionCostUsd = 0,
+  contextWindow = 128_000, contextUsedTokens = 0, sessionCostUsd = 0, activeBackgroundJobs = 0,
+  agentMode = 'act',
 }: StatusBarProps): React.ReactNode {
   const { columns } = useTerminalSize();
   const safeWidth = Math.max(10, columns - 1); // 永远预留哪怕 1 列的边缘空隙，防止终端渲染器自动折行
@@ -79,7 +84,10 @@ export function StatusBar({
       {/* 矩阵数值行 */}
       <Box width={safeWidth} justifyContent="space-between">
         <Box width="25%" overflowX="hidden">
-          <Text dimColor wrap="truncate-end">{shortCwd}</Text>
+          <Text dimColor wrap="truncate-end">
+            {activeBackgroundJobs > 0 ? <Text color="yellow">⚙BGs:{activeBackgroundJobs} </Text> : ''}
+            {shortCwd}
+          </Text>
         </Box>
         
         <Box width="25%" overflowX="hidden">
@@ -105,7 +113,11 @@ export function StatusBar({
         </Box>
 
         <Box width="25%" overflowX="hidden" justifyContent="flex-end">
-          <Text color="cyan" wrap="truncate-end">{model}</Text>
+          <Text wrap="truncate-end">
+            {agentMode === 'plan' && <Text color="cyanBright" bold>[PLAN] </Text>}
+            {agentMode === 'auto-approve' && <Text color="yellowBright" bold>[AUTO] </Text>}
+            <Text color="cyan">{model}</Text>
+          </Text>
         </Box>
       </Box>
     </Box>

@@ -76,6 +76,8 @@ function NexusApp({ oneShotQuery, skipPermissions }: { oneShotQuery?: string; sk
       contextWindow={agentState.contextWindow}
       contextUsedTokens={agentState.contextUsedTokens}
       sessionCostUsd={agentState.sessionCostUsd}
+      activeBackgroundJobs={agentState.activeBackgroundJobs}
+      agentMode={agentState.agentMode}
     />
   );
 }

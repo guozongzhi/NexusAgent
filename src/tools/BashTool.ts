@@ -60,11 +60,12 @@ function smartTruncate(output: string): string {
 const inputSchema = z.object({
   command: z.string().describe('要执行的 Shell 命令'),
   timeout: z.number().optional().describe('超时时间（毫秒），默认 30000，长命令可设 120000'),
+  is_background: z.boolean().optional().describe('是否置于后台长驻运行（如 Web Server、Dev 监听器），若为 true 工具将立即返回任务 ID，模型可通过 job_manage 工具监控日志。'),
 });
 
 export const BashTool = registerTool({
   name: 'bash',
-  description: '在当前工作目录执行 Shell 命令。用于运行脚本、安装依赖、查看进程等操作。支持管道、重定向等标准 shell 语法。',
+  description: '在当前工作目录执行 Shell 命令。对于耗时查询或需阻塞的前台指令默认执行。对于后台常驻进程请启用 is_background: true。',
   inputSchema,
   isReadOnly: false,
 
@@ -77,6 +78,13 @@ export const BashTool = registerTool({
 
     const timeout = input.timeout ?? 30_000;
     const effectiveCwd = getEffectiveCwd(context.cwd);
+
+    if (input.is_background) {
+      const { JobManager } = await import('../core/JobManager.ts');
+      const manager = JobManager.getInstance();
+      const jobId = manager.spawnJob(input.command, effectiveCwd, cleanEnv());
+      return { output: `[BACKGROUND JOB STARTED] Successfully launched process.\nJobID: ${jobId}\nUse 'job_manage' tool to view logs or kill the process.` };
+    }
 
     return new Promise((resolve) => {
       let stdout = '';

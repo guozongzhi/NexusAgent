@@ -26,5 +26,8 @@ import './WebSearchTool.ts';
 // Phase 5 记忆与沉淀
 import './MemoryTool.ts';
 
+// Phase 6 后台托管机制
+import './JobManageTool.ts';
+
 // 从注册表重新导出
 export { getAllTools, getTool, getAllFunctionDefs } from '../Tool.ts';

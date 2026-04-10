@@ -5,6 +5,7 @@
  */
 import type { CompletedMessage, ToolExecution, ApprovalRequest } from './MessageReducer.ts';
 import type { SpinnerMode } from '../components/Spinner.tsx';
+import type { AgentMode } from '../types/index.ts';
 
 // ─── 状态结构 ────────────────────────────────────────
 
@@ -18,6 +19,8 @@ export interface AgentStateSnapshot {
   showOnboarding: boolean;
   /** 模型名称 */
   modelName: string;
+  /** Agent 运行模式 */
+  agentMode: AgentMode;
   /** 已完成的消息列表（沉淀到 Static） */
   completedMessages: CompletedMessage[];
   /** 输入框内容 */
@@ -44,6 +47,8 @@ export interface AgentStateSnapshot {
   contextUsedTokens: number;
   /** 本次会话成本 (USD) */
   sessionCostUsd: number;
+  /** 后台挂起任务数量 */
+  activeBackgroundJobs: number;
 }
 
 type Listener = () => void;
@@ -62,6 +67,7 @@ export class AgentState {
       apiError: undefined,
       showOnboarding: false,
       modelName: 'active',
+      agentMode: 'act',
       completedMessages: [],
       inputValue: '',
       isProcessing: false,
@@ -75,6 +81,7 @@ export class AgentState {
       contextWindow: 128_000,
       contextUsedTokens: 0,
       sessionCostUsd: 0,
+      activeBackgroundJobs: 0,
     };
   }
 

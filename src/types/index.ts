@@ -5,6 +5,11 @@
 import type { z } from 'zod';
 
 // ============================================================
+// Agent 运行模式
+// ============================================================
+export type AgentMode = 'act' | 'plan' | 'auto-approve';
+
+// ============================================================
 // LLM 消息协议
 // ============================================================
 
@@ -223,6 +228,8 @@ export interface NexusConfig {
   model: string;
   /** 系统提示词 */
   systemPrompt: string;
+  /** Agent 初始运行模式 */
+  mode?: AgentMode;
   /** MCP 服务配置表 ServerName -> Config */
   mcpServers?: Record<string, McpServerConfig>;
 }

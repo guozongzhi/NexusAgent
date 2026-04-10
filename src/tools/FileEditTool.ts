@@ -257,6 +257,10 @@ export const FileEditTool = registerTool({
         ? fileText.split(actualOldStr).join(newStr)
         : fileText.replace(actualOldStr, newStr);
 
+      // 快照备份
+      const { FileVault } = await import('../services/sandbox/FileVault.ts');
+      await (await FileVault.getInstance()).createSnapshot([targetPath]);
+
       // 原子写入
       await atomicWrite(targetPath, updatedContent);
 
@@ -266,7 +270,7 @@ export const FileEditTool = registerTool({
       const newLines = updatedContent.split('\n').length;
 
       return {
-        output: `成功更新了文件: ${targetPath} (${oldLines} → ${newLines} 行)${fuzzyWarning}\n\n\`\`\`diff\n${diff}\n\`\`\``,
+        output: `[INFO] 撤销点已就绪，如遇问题可用 /undo 回滚。\n成功更新了文件: ${targetPath} (${oldLines} → ${newLines} 行)${fuzzyWarning}\n\n\`\`\`diff\n${diff}\n\`\`\``,
         isError: false,
       };
 

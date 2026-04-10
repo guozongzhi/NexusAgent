@@ -110,7 +110,11 @@ export function useAgentLoop({
       }
 
       const actualModel = conf.model || process.env.OPENAI_MODEL || 'gpt-4o';
-      agentState.setState({ modelName: actualModel });
+      agentState.setState({ 
+        modelName: actualModel,
+        agentMode: conf.mode || 'act'
+      });
+      permissionManagerRef.current?.setMode(conf.mode || 'act');
 
       if (conf.mcpServers) {
         await mcpManager.connectAll(conf.mcpServers);
@@ -127,6 +131,16 @@ export function useAgentLoop({
         ready: true,
         showOnboarding: !hasCompletedOnboarding(),
       });
+
+      let cleanupDone = false;
+      let jobSub: (() => void) | null = null;
+      // 订阅后台挂起进程状态
+      import('../core/JobManager.ts').then(({ JobManager }) => {
+        if (cleanupDone) return;
+        jobSub = JobManager.getInstance().subscribe(() => {
+          agentState.setState({ activeBackgroundJobs: JobManager.getInstance().getActiveJobCount() });
+        });
+      });
     };
     init();
 
@@ -139,6 +153,8 @@ export function useAgentLoop({
     process.on('SIGTERM', shutdownHandler);
 
     return () => {
+      cleanupDone = true;
+      if (jobSub) jobSub();
       streamProcessorRef.current?.dispose();
       process.removeListener('exit', shutdownHandler);
       process.removeListener('SIGINT', shutdownHandler);
@@ -216,6 +232,10 @@ export function useAgentLoop({
           } finally {
             agentState.setState({ isProcessing: false, spinnerMode: 'idle' });
           }
+        },
+        setMode: (mode) => {
+          agentState.setState({ agentMode: mode });
+          permissionManagerRef.current?.setMode(mode);
         },
       });
 
@@ -479,6 +499,7 @@ export function useAgentLoop({
     contextWindow: snapshot.contextWindow,
     contextUsedTokens: snapshot.contextUsedTokens,
     sessionCostUsd: snapshot.sessionCostUsd,
+    activeBackgroundJobs: snapshot.activeBackgroundJobs,
     handleSubmit,
     interrupt,
   };

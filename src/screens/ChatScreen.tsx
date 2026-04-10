@@ -86,6 +86,8 @@ export interface ChatScreenProps {
   contextWindow?: number;
   contextUsedTokens?: number;
   sessionCostUsd?: number;
+  activeBackgroundJobs?: number;
+  agentMode?: any;
 }
 
 export function ChatScreen({
@@ -107,6 +109,8 @@ export function ChatScreen({
   contextWindow = 128_000,
   contextUsedTokens = 0,
   sessionCostUsd = 0,
+  activeBackgroundJobs = 0,
+  agentMode = 'act',
 }: ChatScreenProps) {
   const { useProactiveTips, useRandomTip } = require('../hooks/useProactiveTips.ts');
   const activeTip = useProactiveTips(inputValue);
@@ -205,6 +209,8 @@ export function ChatScreen({
           contextWindow={contextWindow}
           contextUsedTokens={contextUsedTokens}
           sessionCostUsd={sessionCostUsd}
+          activeBackgroundJobs={activeBackgroundJobs}
+          agentMode={agentMode}
         />
       </Box>
     </>

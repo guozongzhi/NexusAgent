@@ -3,6 +3,7 @@
  * 合并 permissionStore + useAgentLoop 中散落的权限逻辑为独立模块
  */
 import { isToolAutoApproved, addAutoApprovedTool } from '../security/permissionStore.ts';
+import type { AgentMode } from '../types/index.ts';
 
 // ─── 只读工具列表（自动跳过权限确认）──────────────────
 export const READ_ONLY_TOOLS = ['file_read', 'list_dir', 'search', 'grep', 'glob', 'note'];
@@ -33,10 +34,18 @@ const _approvalCache = new Map<string, boolean>();
 export class PermissionManager {
   private readonly skipPermissions: boolean;
   private readonly cwd: string;
+  private agentMode: AgentMode = 'act';
 
   constructor(options: PermissionManagerOptions) {
     this.skipPermissions = options.skipPermissions;
     this.cwd = options.cwd;
+  }
+
+  /**
+   * 更新当前运行模式
+   */
+  public setMode(mode: AgentMode): void {
+    this.agentMode = mode;
   }
 
   /**
@@ -54,6 +63,17 @@ export class PermissionManager {
 
     // 2. 只读工具 / safe 类型直接放行
     const isSafe = READ_ONLY_TOOLS.includes(toolName) || authType === 'safe' || isReadOnly;
+    
+    // Plan 模式逻辑：禁止非安全工具执行
+    if (this.agentMode === 'plan' && !isSafe) {
+      return { decision: 'deny', reason: '当前处于 Plan 模式，无权执行具有副作用的操作。请切换到 Act 模式再试。' };
+    }
+
+    // Auto-Approve 模式逻辑：强制放行
+    if (this.agentMode === 'auto-approve') {
+      return { decision: 'allow', reason: 'auto-approve mode enabled' };
+    }
+
     if (isSafe && !toolName.startsWith('mcp__')) {
       return { decision: 'allow', reason: 'read-only or safe tool' };
     }
