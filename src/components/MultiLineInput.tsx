@@ -10,6 +10,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { InputHistory } from '../core/InputHistory.ts';
+import { useTerminalSize } from '../hooks/useTerminalSize.ts';
 
 interface MultiLineInputProps {
   value: string;
@@ -96,9 +97,11 @@ export function MultiLineInput({
 
   const displayValue = value || '';
   const showPlaceholder = !displayValue && !disabled;
+  const { columns } = useTerminalSize();
+  const safeWidth = Math.max(10, columns - 1); // 安全空隙防止撞墙折行
 
   return (
-    <Box flexGrow={1} overflowX="hidden">
+    <Box width={safeWidth} overflowX="hidden">
       <Text color="cyanBright" bold>❯ </Text>
       {showPlaceholder ? (
         <Text dimColor wrap="truncate-end">{placeholder}</Text>

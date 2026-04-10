@@ -10,6 +10,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { formatTokens } from '../utils/path.ts';
+import { useTerminalSize } from '../hooks/useTerminalSize.ts';
 
 interface StatusBarProps {
   model: string;
@@ -53,30 +54,35 @@ export function StatusBar({
   model, cwd, tokenCount, promptTokens = 0, completionTokens = 0, isProcessing,
   contextWindow = 128_000, contextUsedTokens = 0, sessionCostUsd = 0,
 }: StatusBarProps): React.ReactNode {
-  const termWidth = process.stdout.columns || 80;
+  const { columns } = useTerminalSize();
+  const safeWidth = Math.max(10, columns - 1); // 永远预留哪怕 1 列的边缘空隙，防止终端渲染器自动折行
+
   const showTokens = isProcessing || (tokenCount && tokenCount > 0);
   const home = process.env.HOME || '';
   const shortCwd = cwd.startsWith(home) ? '~' + cwd.slice(home.length) : cwd;
 
   return (
-    <Box flexDirection="column" width="100%">
-      {/* 分隔线（使用原生 Ink 软边框而非暴力字符串填充，完美自适应缩放） */}
-      <Box width="100%" borderStyle="single" borderTop={true} borderBottom={false} borderLeft={false} borderRight={false} borderColor="gray" paddingBottom={0} paddingTop={0}>
-        <Box width="100%" justifyContent="space-between">
-          <Box flexGrow={1} flexBasis="25%"><Text dimColor wrap="truncate-end">workspace (/cwd)</Text></Box>
-          <Box flexGrow={1} flexBasis="25%"><Text dimColor wrap="truncate-end">context usage</Text></Box>
-          <Box flexGrow={1} flexBasis="25%"><Text dimColor wrap="truncate-end">tokens (/cost)</Text></Box>
-          <Box flexGrow={1} flexBasis="25%" justifyContent="flex-end"><Text dimColor wrap="truncate-end">/model</Text></Box>
-        </Box>
+    <Box flexDirection="column" width={safeWidth}>
+      {/* 分隔线（监听真实终端 resize 事件并实时约束尺寸，永不触碰右边界） */}
+      <Box width={safeWidth} paddingBottom={0} paddingTop={0}>
+        <Text dimColor>{'─'.repeat(safeWidth)}</Text>
+      </Box>
+
+      {/* 矩阵标签行 */}
+      <Box width={safeWidth} justifyContent="space-between" paddingBottom={0}>
+        <Box width="25%" overflowX="hidden"><Text dimColor wrap="truncate-end">workspace (/cwd)</Text></Box>
+        <Box width="25%" overflowX="hidden"><Text dimColor wrap="truncate-end">context usage</Text></Box>
+        <Box width="25%" overflowX="hidden"><Text dimColor wrap="truncate-end">tokens (/cost)</Text></Box>
+        <Box width="25%" overflowX="hidden" justifyContent="flex-end"><Text dimColor wrap="truncate-end">/model</Text></Box>
       </Box>
 
       {/* 矩阵数值行 */}
-      <Box width="100%" justifyContent="space-between">
-        <Box flexGrow={1} flexBasis="25%" overflowX="hidden">
+      <Box width={safeWidth} justifyContent="space-between">
+        <Box width="25%" overflowX="hidden">
           <Text dimColor wrap="truncate-end">{shortCwd}</Text>
         </Box>
         
-        <Box flexGrow={1} flexBasis="25%" overflowX="hidden">
+        <Box width="25%" overflowX="hidden">
           {contextUsedTokens > 0 ? (
             <Text color={contextUsedTokens / contextWindow > 0.8 ? 'yellow' : 'green'} wrap="truncate-end">
               {renderContextBar(contextUsedTokens, contextWindow)}
@@ -86,7 +92,7 @@ export function StatusBar({
           )}
         </Box>
 
-        <Box flexGrow={1} flexBasis="25%" overflowX="hidden">
+        <Box width="25%" overflowX="hidden">
           {showTokens ? (
             <Text wrap="truncate-end">
               {formatTokens(tokenCount || 0)}
@@ -98,7 +104,7 @@ export function StatusBar({
           )}
         </Box>
 
-        <Box flexGrow={1} flexBasis="25%" overflowX="hidden" justifyContent="flex-end">
+        <Box width="25%" overflowX="hidden" justifyContent="flex-end">
           <Text color="cyan" wrap="truncate-end">{model}</Text>
         </Box>
       </Box>
