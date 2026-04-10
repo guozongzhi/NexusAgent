@@ -102,7 +102,7 @@ export function StatusBar({
         </Box>
 
         <Box width="25%" justifyContent="flex-end">
-          <Text>{model}</Text>
+          <Text color="cyan">{model}</Text>
         </Box>
       </Box>
     </Box>

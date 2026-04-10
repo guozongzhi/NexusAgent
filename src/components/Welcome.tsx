@@ -28,7 +28,7 @@ function boxLine(content: string, totalWidth: number, paddingX: number = 2): str
   const pad = Math.max(0, maxContentWidth - visibleLen);
   const leftPad = ' '.repeat(paddingX);
   const rightPad = ' '.repeat(pad + paddingX);
-  return `  ${chalk.yellow(BOX.v)}${leftPad}${content}${rightPad}${chalk.yellow(BOX.v)}`;
+  return `  ${chalk.dim(BOX.v)}${leftPad}${content}${rightPad}${chalk.dim(BOX.v)}`;
 }
 
 /**
@@ -67,13 +67,13 @@ export function printWelcome(version: string, cwd: string, model: string): void 
   const boxTotalWidth = Math.max(Math.min(terminalWidth - 4, 140), 60);
   const boxInnerWidth = boxTotalWidth - 2; 
 
-  console.log(`  ${chalk.yellow(BOX.tl)}${chalk.yellow(BOX.h.repeat(boxInnerWidth))}${chalk.yellow(BOX.tr)}`);
+  console.log(`  ${chalk.dim(BOX.tl)}${chalk.dim(BOX.h.repeat(boxInnerWidth))}${chalk.dim(BOX.tr)}`);
   console.log(boxLine('', boxTotalWidth));
   console.log(boxLine(`${chalk.cyanBright('ℹ')}  ${chalk.yellowBright('Agent Tips')}`, boxTotalWidth, 2));
-  console.log(boxLine(`${chalk.whiteBright('•')} Type ${chalk.cyanBright('/help')} ${chalk.dim('to see available commands.')}`, boxTotalWidth, 2));
-  console.log(boxLine(`${chalk.whiteBright('•')} Type ${chalk.cyanBright('/memory')} ${chalk.dim('to save preferences for future sessions.')}`, boxTotalWidth, 2));
+  console.log(boxLine(`${chalk.dim('•')} Type ${chalk.cyan('/help')} ${chalk.dim('to see available commands.')}`, boxTotalWidth, 2));
+  console.log(boxLine(`${chalk.dim('•')} Type ${chalk.cyan('/memory')} ${chalk.dim('to save preferences for future sessions.')}`, boxTotalWidth, 2));
   console.log(boxLine('', boxTotalWidth));
-  console.log(`  ${chalk.yellow(BOX.bl)}${chalk.yellow(BOX.h.repeat(boxInnerWidth))}${chalk.yellow(BOX.br)}`);
+  console.log(`  ${chalk.dim(BOX.bl)}${chalk.dim(BOX.h.repeat(boxInnerWidth))}${chalk.dim(BOX.br)}`);
   
   console.log('');
 }

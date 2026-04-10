@@ -24,27 +24,12 @@ import { addAutoApprovedTool } from '../security/permissionStore.ts';
 // ─── 消息块渲染（用于 Static 内的已完成消息）──────────
 function StaticMessageBlock({ item }: { item: CompletedMessage }) {
   if (item.role === 'user') {
-    const lines = item.content.split('\n');
-    const termWidth = process.stdout.columns || 80;
-    
-    const body = lines[0] || '';
-    const padLen = Math.max(0, termWidth - 4 - body.length);
-    const firstPads = ' '.repeat(padLen);
-    
     return (
       <Box marginTop={1} flexDirection="column" width="100%">
-        <Text backgroundColor="blackBright">
+        <Text>
           <Text color="magentaBright" bold>{' >  '}</Text>
-          <Text color="white">{body + firstPads}</Text>
+          <Text dimColor>{item.content}</Text>
         </Text>
-        {lines.slice(1).map((line, idx) => {
-          const lPad = Math.max(0, termWidth - 4 - line.length);
-          return (
-            <Text key={idx} backgroundColor="blackBright" color="white">
-              {'    ' + line + ' '.repeat(lPad)}
-            </Text>
-          );
-        })}
       </Box>
     );
   }

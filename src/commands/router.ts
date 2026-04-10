@@ -52,6 +52,12 @@ export async function parseAndRouteCommand(query: string, actions: CommandAction
       actions.clear();
       return { handled: true, output: '会话记录已清理。' };
 
+    case '/cwd':
+      if (parts.length < 2) {
+        return { handled: true, output: `当前工作区: ${process.cwd()}` };
+      }
+      return { handled: true, output: `⚠ 切换目录需重新初始化 Agent。请退出使用 \`cd ${parts.slice(1).join(' ')}\` 后重新运行。` };
+
     case '/help':
       return {
         handled: true,
@@ -61,6 +67,7 @@ export async function parseAndRouteCommand(query: string, actions: CommandAction
   **/clear**    — 清除当前终端显示与持久化的会话历史
   **/config**   — 动态设置配置项 (例如: \`/config model gemma4:e4b\`)
   **/model**    — 快速切换模型 (例如: \`/model gpt-4o\`)
+  **/cwd**      — 显示当前运行的工作区路径
   **/status**   — 显示当前连接状态、模型、token 用量
   **/history**  — 查看当前会话的消息数和 token 估算
   **/compact**  — 压缩上下文窗口（截断旧消息）
