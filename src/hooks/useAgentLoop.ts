@@ -375,11 +375,12 @@ export function useAgentLoop({
       await saveSession(cwd, historyRef.current);
 
       if (response.usage) {
-        const newTokenCount = snapshot.tokenCount + response.usage.promptTokens + response.usage.completionTokens;
+        const freshState = agentState.getState();
+        const newTokenCount = freshState.tokenCount + response.usage.promptTokens + response.usage.completionTokens;
         agentState.setState({ 
           tokenCount: newTokenCount,
-          promptTokens: snapshot.promptTokens + response.usage.promptTokens,
-          completionTokens: snapshot.completionTokens + response.usage.completionTokens,
+          promptTokens: freshState.promptTokens + response.usage.promptTokens,
+          completionTokens: freshState.completionTokens + response.usage.completionTokens,
         });
 
         import('../services/telemetry/CostTracker.ts').then(({ costTracker }) => {

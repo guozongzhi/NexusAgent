@@ -136,6 +136,12 @@ export class QueryEngine {
         };
       }
 
+      // 如果 LLM 未返回用量（部分本地模型/Ollama），进行字符级估算
+      if (totalPromptTokens === 0 && totalCompletionTokens === 0) {
+        totalPromptTokens = Math.ceil(JSON.stringify(messages).length / 4);
+        totalCompletionTokens = Math.ceil(textAccum.length / 4) + toolCalls.length * 20;
+      }
+
       // 无工具调用 → 终止循环
       if (toolCalls.length === 0 || stopReason === 'end_turn') {
         return {
