@@ -25,14 +25,23 @@ import { addAutoApprovedTool } from '../security/permissionStore.ts';
 function StaticMessageBlock({ item }: { item: CompletedMessage }) {
   if (item.role === 'user') {
     const lines = item.content.trimEnd().split('\n');
+    const termWidth = process.stdout.columns || 80;
+    
     return (
       <Box marginTop={1} flexDirection="column" width="100%">
-        {lines.map((line, idx) => (
-          <Text key={idx}>
-            {idx === 0 ? <Text color="magentaBright" bold>{' >  '}</Text> : <Text>{'    '}</Text>}
-            <Text dimColor>{line}</Text>
-          </Text>
-        ))}
+        {lines.map((line, idx) => {
+          const prefix = idx === 0 ? ' >  ' : '    ';
+          const body = prefix + line;
+          // +1 为安全余量，防止终端硬回车断行
+          const padLen = Math.max(0, termWidth - body.length - 1); 
+          
+          return (
+            <Text key={idx} backgroundColor="#232323">
+              {idx === 0 ? <Text color="magentaBright" bold>{' >  '}</Text> : <Text>{'    '}</Text>}
+              <Text color="white">{line + ' '.repeat(padLen)}</Text>
+            </Text>
+          );
+        })}
       </Box>
     );
   }
