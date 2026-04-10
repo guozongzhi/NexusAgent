@@ -65,12 +65,16 @@ export function StatusBar({
     </Box>
   ) : null;
 
-  // Token 信息 (总/上行/下行)
-  const tokensNode = tokenCount !== undefined ? (
+  // Token 信息 (总/上行/下行：仅在处理中或有历史数据的静态下才显示)
+  const showTokens = isProcessing || (tokenCount && tokenCount > 0);
+  const tokensNode = showTokens ? (
     <Box gap={1}>
       <Text dimColor>tok</Text>
-      <Text>{formatTokens(tokenCount)}</Text>
-      <Text dimColor>↑{formatTokens(promptTokens)} ↓{formatTokens(completionTokens)}</Text>
+      <Text>{formatTokens(tokenCount || 0)}</Text>
+      {/* 仅在数据流动（isProcessing）时展示具体上/下行明细 */}
+      {isProcessing && (
+        <Text dimColor>↑{formatTokens(promptTokens)} ↓{formatTokens(completionTokens)}</Text>
+      )}
     </Box>
   ) : null;
 
