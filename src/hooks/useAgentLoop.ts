@@ -359,6 +359,13 @@ export function useAgentLoop({
 
       if (response.usage) {
         setTokenCount(prev => prev + response.usage.promptTokens + response.usage.completionTokens);
+        import('../services/telemetry/CostTracker.ts').then(({ costTracker }) => {
+          costTracker.recordUsage(actualModel, {
+            promptTokens: response.usage.promptTokens,
+            completionTokens: response.usage.completionTokens,
+            totalTokens: response.usage.promptTokens + response.usage.completionTokens
+          });
+        });
       }
     } catch (err: any) {
       if (err.name !== 'AbortError' && !err.message.includes('abort')) {

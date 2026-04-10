@@ -379,18 +379,29 @@ export async function parseAndRouteCommand(query: string, actions: CommandAction
     }
 
     case '/cost': {
+      const { costTracker } = await import('../services/telemetry/CostTracker.ts');
+      const summary = costTracker.getSummary();
       const tokenCount = actions.getTokenCount();
       const model = actions.getModel();
-      // 粗略估算（基于 GPT-4o 均价 $5/1M token）
-      const estimatedCost = (tokenCount / 1_000_000 * 5).toFixed(4);
+
+      const modelBreakdown = Object.entries(summary.models)
+        .map(([m, c]) => `  ${m.padEnd(20)} $${c.toFixed(4)}`)
+        .join('\n');
+
       return {
         handled: true,
         output: [
-          `本次会话 Token 统计`,
+          `💳 全局成本统计中心 (Cost Center)`,
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `模型:       ${model}`,
-          `累计 Token: ${tokenCount.toLocaleString()}`,
-          `估算费用: ~$${estimatedCost} (基于 GPT-4o 均价)`,
+          `当前活跃模型: ${model}`,
+          `本会话累积 Token: ${tokenCount.toLocaleString()}`,
+          ``,
+          `📉 历史总消耗`,
+          `总费用: $${summary.totalUsd.toFixed(4)}`,
+          `总计 Token: ${summary.totalTokens.toLocaleString()}`,
+          ``,
+          `📊 模型明细`,
+          modelBreakdown || '  (无)',
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
         ].join('\n'),
       };
