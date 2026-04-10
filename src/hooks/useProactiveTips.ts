@@ -7,10 +7,10 @@ export interface Tip {
 }
 
 const COMMAND_HINTS: Record<string, string> = {
-  '/m': '💡 /memory (知识库), /model (切换模型), /mcp (工具扩展)',
-  '/c': '💡 /cost (查看开销), /commit (提交代码), /clear (清除对话)',
-  '/h': '💡 /help (查看帮助), /history (历史信息)',
-  '/s': '💡 /status (系统状态), /skills (技能流), /sk',
+  '/m': 'ℹ /memory (知识库), /model (切换模型), /mcp (工具扩展)',
+  '/c': 'ℹ /cost (查看开销), /commit (提交代码), /clear (清除对话)',
+  '/h': 'ℹ /help (查看帮助), /history (历史信息)',
+  '/s': 'ℹ /status (系统状态), /skills (技能流), /sk',
 };
 
 const KEYWORD_HINTS = [
@@ -46,7 +46,7 @@ export function useProactiveTips(inputValue: string): Tip | null {
       const lower = text.toLowerCase();
       const matchedKeyword = KEYWORD_HINTS.find(k => k.match.test(lower));
       if (matchedKeyword) {
-        setActiveTip({ id: 'kw-' + matchedKeyword.match.toString(), text: '💡 提示: ' + matchedKeyword.tip });
+        setActiveTip({ id: 'kw-' + matchedKeyword.match.toString(), text: 'ℹ 提示: ' + matchedKeyword.tip });
         return;
       }
     }

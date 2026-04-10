@@ -62,18 +62,10 @@ export function printWelcome(version: string, cwd: string, model: string): void 
 
   console.log('');
 
-  // ── 2. 亮黄色加宽提示方框 ──
-  const terminalWidth = process.stdout.columns || 80;
-  const boxTotalWidth = Math.max(Math.min(terminalWidth - 4, 140), 60);
-  const boxInnerWidth = boxTotalWidth - 2; 
-
-  console.log(`  ${chalk.yellowBright(BOX.tl)}${chalk.yellowBright(BOX.h.repeat(boxInnerWidth))}${chalk.yellowBright(BOX.tr)}`);
-  console.log(boxLine('', boxTotalWidth));
-  console.log(boxLine(`${chalk.yellowBright('💡 Agent Tips')}`, boxTotalWidth, 2));
-  console.log(boxLine(`${chalk.whiteBright('•')} Type ${chalk.cyanBright('/help')} ${chalk.dim('to see available commands.')}`, boxTotalWidth, 2));
-  console.log(boxLine(`${chalk.whiteBright('•')} Type ${chalk.cyanBright('/memory')} ${chalk.dim('to save preferences for future sessions.')}`, boxTotalWidth, 2));
-  console.log(boxLine('', boxTotalWidth));
-  console.log(`  ${chalk.yellowBright(BOX.bl)}${chalk.yellowBright(BOX.h.repeat(boxInnerWidth))}${chalk.yellowBright(BOX.br)}`);
+  // ── 2. 清新提示区 ──
+  console.log(`  ${chalk.cyanBright('ℹ')}  ${chalk.yellowBright('Agent Tips')}`);
+  console.log(`     ${chalk.whiteBright('•')} Type ${chalk.cyanBright('/help')} ${chalk.dim('to see available commands.')}`);
+  console.log(`     ${chalk.whiteBright('•')} Type ${chalk.cyanBright('/memory')} ${chalk.dim('to save preferences for future sessions.')}`);
   
   console.log('');
 }
