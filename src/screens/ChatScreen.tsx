@@ -73,6 +73,9 @@ export function ChatScreen({
   tokenCount,
   handleSubmit
 }: ChatScreenProps) {
+  const { useProactiveTips } = require('../hooks/useProactiveTips.ts');
+  const activeTip = useProactiveTips(inputValue);
+
   return (
     <>
       <Static items={completedMessages}>
@@ -114,13 +117,21 @@ export function ChatScreen({
       ) : (
         <Box flexDirection="column">
           {!isProcessing && (
-            <Box>
-              <Text bold color="white">{'> '}</Text>
-              <TextInput
-                value={inputValue}
-                onChange={setInputValue}
-                onSubmit={handleSubmit}
-              />
+            <Box flexDirection="column">
+              <Box>
+                <Text bold color="white">{'> '}</Text>
+                <TextInput
+                  value={inputValue}
+                  onChange={setInputValue}
+                  onSubmit={handleSubmit}
+                />
+              </Box>
+              {/* 高阶启发式输入提示 */}
+              {activeTip && (
+                <Box marginLeft={2} marginTop={0}>
+                  <Text dimColor italic color="yellow">{activeTip.text}</Text>
+                </Box>
+              )}
             </Box>
           )}
 
