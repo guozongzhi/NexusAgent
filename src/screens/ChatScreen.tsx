@@ -24,12 +24,23 @@ import { addAutoApprovedTool } from '../security/permissionStore.ts';
 // ─── 消息块渲染（用于 Static 内的已完成消息）──────────
 function StaticMessageBlock({ item }: { item: CompletedMessage }) {
   if (item.role === 'user') {
+    const lines = item.content.split('\n');
+    const termWidth = process.stdout.columns || 80;
+    
     return (
       <Box marginTop={1} flexDirection="column" width="100%">
-        <Text>
-          <Text color="magentaBright" bold>{' >  '}</Text>
-          <Text dimColor>{item.content}</Text>
-        </Text>
+        {lines.map((line, idx) => {
+          const body = idx === 0 ? ` >  ${line}` : `    ${line}`;
+          const padLen = Math.max(0, termWidth - 1 - body.length);
+          const formatted = body + ' '.repeat(padLen);
+          
+          return (
+            <Text key={idx} backgroundColor="blackBright">
+              {idx === 0 ? <Text color="magentaBright" bold>{' >  '}</Text> : <Text>{'    '}</Text>}
+              <Text color="white">{line + ' '.repeat(padLen)}</Text>
+            </Text>
+          );
+        })}
       </Box>
     );
   }
@@ -115,12 +126,23 @@ export function ChatScreen({
         {(msg) => <StaticMessageBlock key={msg.id} item={msg} />}
       </Static>
 
-      {isProcessing && streamingText && (
-        <Box marginBottom={1}>
-          <Text color="magentaBright" bold>{'✦ '}</Text>
-          <Text wrap="wrap">{renderMarkdown(streamingText)}</Text>
-        </Box>
-      )}
+      {isProcessing && streamingText && (() => {
+        const rows = process.stdout.rows || 30;
+        const maxLines = Math.max(10, rows - 15);
+        const lines = streamingText.split('\n');
+        
+        let displayStr = streamingText;
+        if (lines.length > maxLines) {
+           displayStr = lines.slice(lines.length - maxLines).join('\n');
+        }
+        
+        return (
+          <Box marginBottom={1}>
+            <Text color="magentaBright" bold>{'✦ '}</Text>
+            <Text wrap="wrap">{renderMarkdown(displayStr)}</Text>
+          </Box>
+        );
+      })()}
 
       {toolExecutions.length > 0 && (
         <ToolPanel tools={toolExecutions.map(t => ({

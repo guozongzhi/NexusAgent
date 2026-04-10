@@ -90,6 +90,7 @@ export function useAgentLoop({
 
       // 初始化流处理器
       streamProcessorRef.current = new StreamProcessor({
+        flushIntervalMs: 150, // 从 50ms 调高至 150ms 极大降低巨量输出时的排版算力消耗和终端闪烁
         onFlush: (chunk) => {
           const prev = agentState.getState().streamingText;
           agentState.setState({ streamingText: prev + chunk });
