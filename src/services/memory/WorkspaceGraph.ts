@@ -72,8 +72,13 @@ ${nexusMd.slice(0, 1000) || readme.slice(0, 1000) || '无'}
     const response = await engine.run({
       systemPrompt: 'You are Nexus Project Analyzer.',
       messages: [{ role: 'user', content: prompt }],
-      model: model,
-      toolDefs: [], // 不提供工具
+      model,
+      toolDefs: [],
+      toolContext: {
+        cwd: cwd,
+        sessionId: 'analysis',
+        isAuthorized: true,
+      },
       abortSignal: undefined,
     });
 

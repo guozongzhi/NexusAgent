@@ -32,9 +32,11 @@ const SENSITIVE_ENV_KEYS = [
 ];
 
 function cleanEnv(): Record<string, string | undefined> {
-  const env = { ...process.env, LANG: 'en_US.UTF-8' };
+  const env = { ...process.env, LANG: 'en_US.UTF-8' } as Record<string, string | undefined>;
   for (const key of SENSITIVE_ENV_KEYS) {
-    delete env[key];
+    if (key in env) {
+      delete env[key];
+    }
   }
   return env;
 }
