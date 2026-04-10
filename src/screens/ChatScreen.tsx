@@ -26,7 +26,7 @@ function StaticMessageBlock({ item }: { item: CompletedMessage }) {
   if (item.role === 'user') {
     const lines = item.content.trimEnd().split('\n');
     return (
-      <Box marginTop={1} flexDirection="column" width="100%">
+      <Box marginTop={1} flexDirection="column">
         {lines.map((line, idx) => (
           <Text key={idx} backgroundColor="#232323">
             {idx === 0 ? <Text color="magentaBright" bold>{' >  '}</Text> : <Text>{'    '}</Text>}
