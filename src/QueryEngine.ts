@@ -118,7 +118,7 @@ export class QueryEngine {
 
           case 'error':
             return {
-              text: `[LLM Error] ${event.error}`,
+              text: event.error,
               usage: { promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens },
             };
 

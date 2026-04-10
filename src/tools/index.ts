@@ -23,8 +23,8 @@ import './TaskManageTool.ts';
 import './WebFetchTool.ts';
 import './WebSearchTool.ts';
 
-// Phase 5 生态扩展
-import './NotebookEditTool.ts';
+// Phase 5 记忆与沉淀
+import './MemoryTool.ts';
 
 // 从注册表重新导出
 export { getAllTools, getTool, getAllFunctionDefs } from '../Tool.ts';

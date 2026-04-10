@@ -25,8 +25,10 @@ export interface CostSummary {
 const PRICING_TABLE: Record<string, { prompt: number; completion: number }> = {
   'gpt-4o': { prompt: 5.0, completion: 15.0 },
   'gpt-4o-mini': { prompt: 0.15, completion: 0.6 },
-  'claude-3-5-sonnet-20241022': { prompt: 3.0, completion: 15.0 },
-  'claude-3-5-haiku-20241022': { prompt: 0.8, completion: 4.0 },
+  'claude-3-5-sonnet': { prompt: 3.0, completion: 15.0 },
+  'claude-3-5-haiku': { prompt: 0.8, completion: 4.0 },
+  'deepseek-chat': { prompt: 0.14, completion: 0.28 },
+  'deepseek-coder': { prompt: 0.14, completion: 0.28 },
 };
 
 function getCostDbPath(): string {
@@ -67,7 +69,18 @@ export class CostTracker {
 
   public recordUsage(model: string, usage: TokenUsage): CostRecord {
     let cost = 0;
-    const rates = PRICING_TABLE[model];
+    let rates = PRICING_TABLE[model];
+
+    // 如果未精确匹配，尝试前缀匹配
+    if (!rates) {
+      for (const [key, value] of Object.entries(PRICING_TABLE)) {
+        if (model.startsWith(key)) {
+          rates = value;
+          break;
+        }
+      }
+    }
+
     if (rates) {
       cost = (usage.promptTokens / 1_000_000) * rates.prompt + 
              (usage.completionTokens / 1_000_000) * rates.completion;
