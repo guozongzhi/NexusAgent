@@ -29,6 +29,8 @@ interface StatusBarProps {
   activeBackgroundJobs?: number;
   /** Agent 运行模式 */
   agentMode?: any;
+  /** 是否正在沉淀经验 */
+  isLearning?: boolean;
 }
 
 /**
@@ -58,6 +60,7 @@ export function StatusBar({
   model, cwd, tokenCount, promptTokens = 0, completionTokens = 0, isProcessing,
   contextWindow = 128_000, contextUsedTokens = 0, sessionCostUsd = 0, activeBackgroundJobs = 0,
   agentMode = 'act',
+  isLearning = false,
 }: StatusBarProps): React.ReactNode {
   const { columns } = useTerminalSize();
   const safeWidth = Math.max(10, columns - 1); // 永远预留哪怕 1 列的边缘空隙，防止终端渲染器自动折行
@@ -75,22 +78,31 @@ export function StatusBar({
 
       {/* 矩阵标签行 */}
       <Box width={safeWidth} justifyContent="space-between" paddingBottom={0}>
-        <Box width="25%" overflowX="hidden"><Text dimColor wrap="truncate-end">workspace (/cwd)</Text></Box>
-        <Box width="25%" overflowX="hidden"><Text dimColor wrap="truncate-end">context usage</Text></Box>
+        <Box width="30%" overflowX="hidden"><Text dimColor wrap="truncate-end">status & workspace</Text></Box>
+        <Box width="20%" overflowX="hidden"><Text dimColor wrap="truncate-end">context usage</Text></Box>
         <Box width="25%" overflowX="hidden"><Text dimColor wrap="truncate-end">tokens (/cost)</Text></Box>
         <Box width="25%" overflowX="hidden" justifyContent="flex-end"><Text dimColor wrap="truncate-end">/model</Text></Box>
       </Box>
 
       {/* 矩阵数值行 */}
       <Box width={safeWidth} justifyContent="space-between">
-        <Box width="25%" overflowX="hidden">
-          <Text dimColor wrap="truncate-end">
-            {activeBackgroundJobs > 0 ? <Text color="yellow">⚙BGs:{activeBackgroundJobs} </Text> : ''}
-            {shortCwd}
+        <Box width="30%" overflowX="hidden">
+          <Text wrap="truncate-end">
+            {isProcessing ? (
+              <Text color="yellowBright" bold>● WORKING </Text>
+            ) : isLearning ? (
+              <Text color="magentaBright" bold>✨ LEARNING </Text>
+            ) : (
+              <Text color="green" bold>○ IDLE </Text>
+            )}
+            <Text dimColor>
+              {activeBackgroundJobs > 0 ? <Text color="yellow">⚙BGs:{activeBackgroundJobs} </Text> : ''}
+              {shortCwd}
+            </Text>
           </Text>
         </Box>
         
-        <Box width="25%" overflowX="hidden">
+        <Box width="20%" overflowX="hidden">
           {contextUsedTokens > 0 ? (
             <Text color={contextUsedTokens / contextWindow > 0.8 ? 'yellow' : 'green'} wrap="truncate-end">
               {renderContextBar(contextUsedTokens, contextWindow)}
@@ -104,7 +116,6 @@ export function StatusBar({
           {showTokens ? (
             <Text wrap="truncate-end">
               {formatTokens(tokenCount || 0)}
-              {isProcessing ? <Text dimColor> ↑{formatTokens(promptTokens)} ↓{formatTokens(completionTokens)}</Text> : ''}
               {sessionCostUsd > 0 ? <Text color="yellow"> {formatCost(sessionCostUsd)}</Text> : ''}
             </Text>
           ) : (
@@ -115,7 +126,8 @@ export function StatusBar({
         <Box width="25%" overflowX="hidden" justifyContent="flex-end">
           <Text wrap="truncate-end">
             {agentMode === 'plan' && <Text color="cyanBright" bold>[PLAN] </Text>}
-            {agentMode === 'auto-approve' && <Text color="yellowBright" bold>[AUTO] </Text>}
+            {agentMode === 'auto-approve' && <Text color="redBright" bold>[AUTO] </Text>}
+            {agentMode === 'act' && <Text color="greenBright" bold>[ACT] </Text>}
             <Text color="cyan">{model}</Text>
           </Text>
         </Box>

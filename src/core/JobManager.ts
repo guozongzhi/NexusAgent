@@ -127,7 +127,7 @@ export class JobManager {
     
     // 如果没有自带回车，按常规 CLI 交互自动补偿回车
     const normalizedInput = input.endsWith('\n') ? input : input + '\n';
-    return record.proc.stdin.write(normalizedInput);
+    return record.proc.stdin?.write(normalizedInput) ?? false;
   }
 
   public killJob(jobId: string): boolean {

@@ -23,6 +23,8 @@ export interface CommandActions {
   extractWorkspaceContext: () => Promise<string | null>;
   /** 切换 Agent 运行模式 */
   setMode: (mode: any) => void;
+  /** 获取当前项目画像 */
+  getProjectProfile: () => any;
 }
 
 export interface CommandResult {
@@ -123,7 +125,7 @@ export async function parseAndRouteCommand(query: string, actions: CommandAction
       if (parts.length < 2) {
         return { handled: true, output: '用法: `/mode <plan|act|auto-approve>`\n- **plan**: 仅允许只读操作，拦截所有写操作。\n- **act**: 默认模式，修改文件需确认。\n- **auto-approve**: 自动通过所有权限确认。' };
       }
-      const mode = parts[1].toLowerCase();
+      const mode = parts[1]!.toLowerCase();
       if (['plan', 'act', 'auto-approve'].includes(mode)) {
         actions.setMode(mode);
         return { handled: true, output: `Agent 模式已切换为: **${mode.toUpperCase()}**` };
@@ -351,18 +353,36 @@ export async function parseAndRouteCommand(query: string, actions: CommandAction
     }
 
     case '/init': {
+      const profile = actions.getProjectProfile();
       const fs = await import('node:fs/promises');
       const path = await import('node:path');
       const cwd = process.cwd();
       const nexusPath = path.join(cwd, 'NEXUS.md');
+      
+      let exists = false;
       try {
         await fs.access(nexusPath);
-        return { handled: true, output: `NEXUS.md 已存在于 ${nexusPath}，跳过初始化。` };
-      } catch {
-        const template = `# 项目规范\n\n## 代码风格\n- 使用 TypeScript 严格模式\n- 变量命名使用 camelCase\n\n## 提交规范\n- 使用 Conventional Commits\n\n## 测试要求\n- 每个新功能必须包含测试\n`;
-        await fs.writeFile(nexusPath, template, 'utf-8');
-        return { handled: true, output: `✅ NEXUS.md 已初始化于 ${nexusPath}\n你可以编辑它来定义项目级别的 AI 行为规范。` };
-      }
+        exists = true;
+      } catch {}
+
+      const prompt = `你现在是一个资深的系统全栈架构师。
+我已经为你探测到了本项目的基本画像：
+- 语言集成: ${profile?.languages?.join(', ') || '未知'}
+- 核心框架: ${profile?.frameworks?.join(', ') || '原生'}
+- 关键文件: ${profile?.keyFiles?.join(', ') || '无'}
+
+${exists ? '⚠️ 注意：项目中已存在 NEXUS.md 指令文件。' : ''}
+
+你的任务是：
+1. 通过向我提问 3-5 个关于“代码规范”、“测试偏好”、“部署环境”以及“项目特殊约束”的核心问题，引导我完成项目的初始化配置。
+2. 在访谈结束后，利用你的工具生成（或更新）一份高质量的 NEXUS.md 文件。
+
+请开始你的第一轮访谈。`;
+
+      return { 
+        handled: true, 
+        rewrittenQuery: prompt 
+      };
     }
 
     case '/diff': {

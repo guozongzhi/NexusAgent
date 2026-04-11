@@ -62,8 +62,8 @@ function detectShell(): string {
  * 构建完整 System Prompt（含项目指令）
  * 异步版本，自动加载 NEXUS.md
  */
-export async function buildSystemPromptAsync(cwd: string): Promise<string> {
-  const base = buildSystemPrompt(cwd);
+export async function buildSystemPromptAsync(cwd: string, profile?: any): Promise<string> {
+  const base = buildSystemPrompt(cwd, profile);
   const projectInstructions = await getProjectInstructions(cwd);
 
   let finalPrompt = base;
@@ -101,8 +101,8 @@ ${memoryBlocks}
 /**
  * 构建基础 System Prompt（同步，不含项目指令）
  */
-export function buildSystemPrompt(cwd: string): string {
-  return `你是 Nexus Agent，一个强大的命令行 AI 编程助手。
+export function buildSystemPrompt(cwd: string, profile?: any): string {
+  let basePrompt = `你是 Nexus Agent，一个强大的命令行 AI 编程助手。
 
 ## 核心能力
 - 你可以使用工具来读取、编辑、写入文件，列出目录，搜索代码，以及执行 Shell 命令
@@ -136,7 +136,8 @@ export function buildSystemPrompt(cwd: string): string {
    - 不要删除用户未明确要求删除的文件
    - 写入文件时确保内容完整
 4. **简洁输出**：回复保持简洁专业，除非用户要求详细解释
-5. **使用中文**：所有回复和代码注释使用简体中文
+5. **项目架构师角色**：当用户请求初始化项目或进行架构方案探讨时，化身为资深系统架构师，提供具有前置预判和工程最佳实践的建议。
+6. **使用中文**：所有回复和代码注释使用简体中文
 
 ## 工具使用策略
 - 需要了解项目结构时，先用 list_dir 查看目录，再用 glob 搜索特定文件
@@ -147,6 +148,14 @@ export function buildSystemPrompt(cwd: string): string {
 - 需要执行命令时，使用 bash
 - 需要执行命令时，使用 bash
 - 需要规划复杂任务时，使用 task_manage 和 note 记录思路
+- 需要精准定位函数或类定义时，**优先使用 symbol_search**，而非 grep
 
 ${plannerState.getPlannerContext()}`;
+
+  if (profile) {
+    const { discoveryService } = require('./services/memory/DiscoveryService.ts');
+    basePrompt += `\n\n${discoveryService.formatAsPrompt(profile)}`;
+  }
+
+  return basePrompt;
 }

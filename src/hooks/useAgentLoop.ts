@@ -132,8 +132,12 @@ export function useAgentLoop({
         showOnboarding: !hasCompletedOnboarding(),
       });
 
-      let cleanupDone = false;
-      let jobSub: (() => void) | null = null;
+      // 后台项目画像扫描 (L2 Discovery)
+      import('../services/memory/DiscoveryService.ts').then(async ({ discoveryService }) => {
+        const profile = await discoveryService.discover(cwd);
+        agentState.setState({ projectProfile: profile });
+      });
+
       // 订阅后台挂起进程状态
       import('../core/JobManager.ts').then(({ JobManager }) => {
         if (cleanupDone) return;
@@ -142,6 +146,9 @@ export function useAgentLoop({
         });
       });
     };
+    
+    let cleanupDone = false;
+    let jobSub: (() => void) | null = null;
     init();
 
     // 清理
@@ -237,6 +244,7 @@ export function useAgentLoop({
           agentState.setState({ agentMode: mode });
           permissionManagerRef.current?.setMode(mode);
         },
+        getProjectProfile: () => agentState.getState().projectProfile,
       });
 
       if (resp.rewrittenQuery) {
@@ -277,9 +285,10 @@ export function useAgentLoop({
 
       let sysPrompt: string;
       try {
-        sysPrompt = await buildSystemPromptAsync(cwd);
+        const curProfile = agentState.getState().projectProfile;
+        sysPrompt = await buildSystemPromptAsync(cwd, curProfile);
       } catch (promptErr: any) {
-        sysPrompt = buildSystemPrompt(cwd);
+        sysPrompt = buildSystemPrompt(cwd, agentState.getState().projectProfile);
         agentState.setState({
           completedMessages: appendSystemMessage(
             agentState.getState().completedMessages,
@@ -448,6 +457,23 @@ export function useAgentLoop({
           agentState.setState({ sessionCostUsd: agentState.getState().sessionCostUsd + record.costUsd });
         });
       }
+
+      // L3 经验沉淀引擎：触发后台复盘
+      if (historyRef.current.length >= 3 && adapterRef.current) {
+        agentState.setState({ isLearning: true });
+        import('../services/memory/DistillationService.ts').then(async ({ distillationService }) => {
+          try {
+            await distillationService.extractAndRecord(
+              cwd, 
+              historyRef.current, 
+              adapterRef.current!, 
+              actualModel
+            );
+          } finally {
+            agentState.setState({ isLearning: false });
+          }
+        });
+      }
     } catch (err: any) {
       if (err.name !== 'AbortError' && !err.message?.includes('abort')) {
         agentState.setState({
@@ -500,7 +526,13 @@ export function useAgentLoop({
     contextUsedTokens: snapshot.contextUsedTokens,
     sessionCostUsd: snapshot.sessionCostUsd,
     activeBackgroundJobs: snapshot.activeBackgroundJobs,
+    agentMode: snapshot.agentMode,
+    isLearning: snapshot.isLearning,
     handleSubmit,
+    setMode: (mode: any) => {
+      agentState.setState({ agentMode: mode });
+      permissionManagerRef.current?.setMode(mode);
+    },
     interrupt,
   };
 }

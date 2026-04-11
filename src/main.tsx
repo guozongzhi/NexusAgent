@@ -36,6 +36,13 @@ function NexusApp({ oneShotQuery, skipPermissions }: { oneShotQuery?: string; sk
     if (key.ctrl && input === 'c') {
       agentState.interrupt();
     }
+    // Shift + Tab 循环切换模式
+    if (key.shift && key.tab) {
+      const modes: any[] = ['act', 'plan', 'auto-approve'];
+      const currentIndex = modes.indexOf(agentState.agentMode);
+      const nextIndex = (currentIndex + 1) % modes.length;
+      agentState.setMode(modes[nextIndex]);
+    }
   });
 
   if (!agentState.ready) return null;
@@ -78,6 +85,7 @@ function NexusApp({ oneShotQuery, skipPermissions }: { oneShotQuery?: string; sk
       sessionCostUsd={agentState.sessionCostUsd}
       activeBackgroundJobs={agentState.activeBackgroundJobs}
       agentMode={agentState.agentMode}
+      isLearning={agentState.isLearning}
     />
   );
 }

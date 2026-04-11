@@ -6,6 +6,7 @@
 import type { CompletedMessage, ToolExecution, ApprovalRequest } from './MessageReducer.ts';
 import type { SpinnerMode } from '../components/Spinner.tsx';
 import type { AgentMode } from '../types/index.ts';
+import type { ProjectProfile } from '../services/memory/DiscoveryService.ts';
 
 // ─── 状态结构 ────────────────────────────────────────
 
@@ -49,6 +50,10 @@ export interface AgentStateSnapshot {
   sessionCostUsd: number;
   /** 后台挂起任务数量 */
   activeBackgroundJobs: number;
+  /** 项目画像 */
+  projectProfile?: ProjectProfile;
+  /** 是否正在进行经验沉淀 */
+  isLearning: boolean;
 }
 
 type Listener = () => void;
@@ -82,6 +87,7 @@ export class AgentState {
       contextUsedTokens: 0,
       sessionCostUsd: 0,
       activeBackgroundJobs: 0,
+      isLearning: false,
     };
   }
 
