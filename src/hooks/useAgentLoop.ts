@@ -28,7 +28,7 @@ import { mcpManager } from '../services/mcp/McpClientManager.ts';
 // 核心模块
 import { AgentState } from '../core/AgentState.ts';
 import {
-  appendMessage, appendUserMessage, appendSystemMessage, appendAssistantMessage,
+  appendMessage, appendUserMessage, appendSystemMessage, appendAssistantMessage, appendThinkingMessage,
   addToolExecution, completeToolExecution,
   type CompletedMessage, type ToolExecution, type ApprovalRequest,
 } from '../core/MessageReducer.ts';
@@ -276,6 +276,7 @@ export function useAgentLoop({
       spinnerMode: 'thinking',
       toolExecutions: [],
       streamingText: '',
+      thinkingText: '',
     });
     streamProcessorRef.current?.reset();
     const abortController = interruptRef.current.create();
@@ -372,6 +373,10 @@ export function useAgentLoop({
           isAuthorized: skipPermissions ?? false,
         },
         abortSignal: abortController.signal,
+        onThinking: (delta: string) => {
+          const prev = agentState.getState().thinkingText;
+          agentState.setState({ thinkingText: prev + delta });
+        },
         onTextDelta: (delta: string) => {
           streamProcessorRef.current?.push(delta);
           
@@ -427,6 +432,15 @@ export function useAgentLoop({
 
       // 完成处理
       streamProcessorRef.current?.finalize();
+
+      // 沉淀 thinking 消息（如果有 extended thinking 输出）
+      const thinkingText = agentState.getState().thinkingText;
+      if (thinkingText.trim()) {
+        agentState.setState({
+          completedMessages: appendThinkingMessage(agentState.getState().completedMessages, thinkingText),
+          thinkingText: '',
+        });
+      }
 
       const answerText = response.text || '';
       agentState.setState({
@@ -490,6 +504,7 @@ export function useAgentLoop({
         isProcessing: false,
         spinnerMode: 'idle',
         streamingText: '',
+        thinkingText: '',
         toolExecutions: [],
       });
     }

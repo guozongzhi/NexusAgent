@@ -72,6 +72,7 @@ function NexusApp({ oneShotQuery, skipPermissions }: { oneShotQuery?: string; sk
       setInputValue={agentState.setInputValue}
       isProcessing={agentState.isProcessing}
       streamingText={agentState.streamingText}
+      thinkingText={agentState.thinkingText}
       spinnerMode={agentState.spinnerMode}
       toolExecutions={agentState.toolExecutions}
       pendingApproval={agentState.pendingApproval}

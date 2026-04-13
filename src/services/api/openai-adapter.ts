@@ -159,6 +159,12 @@ export class OpenAIAdapter implements LLMAdapter {
           const delta = chunk.choices[0]?.delta;
           if (!delta) continue;
 
+          // 思考过程增量（DeepSeek R1 / QwQ / o1 等模型的 reasoning_content 字段）
+          const reasoning = (delta as any).reasoning_content ?? (delta as any).thinking;
+          if (reasoning) {
+            yield { type: 'thinking_delta', text: reasoning };
+          }
+
           // 文本增量
           if (delta.content) {
             yield { type: 'text_delta', text: delta.content };

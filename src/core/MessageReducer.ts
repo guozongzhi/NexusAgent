@@ -84,6 +84,13 @@ export function appendAssistantMessage(messages: CompletedMessage[], content: st
 }
 
 /**
+ * 追加 thinking 消息（Extended Thinking block）
+ */
+export function appendThinkingMessage(messages: CompletedMessage[], content: string): CompletedMessage[] {
+  return appendMessage(messages, 'thinking', content);
+}
+
+/**
  * 追加系统消息
  */
 export function appendSystemMessage(messages: CompletedMessage[], content: string): CompletedMessage[] {

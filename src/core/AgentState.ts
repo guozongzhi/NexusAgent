@@ -54,7 +54,8 @@ export interface AgentStateSnapshot {
   projectProfile?: ProjectProfile;
   /** 是否正在进行经验沉淀 */
   isLearning: boolean;
-}
+  /** 当前流式 thinking 文本（Extended Thinking） */
+  thinkingText: string;
 
 type Listener = () => void;
 
@@ -88,6 +89,7 @@ export class AgentState {
       sessionCostUsd: 0,
       activeBackgroundJobs: 0,
       isLearning: false,
+      thinkingText: '',
     };
   }
 

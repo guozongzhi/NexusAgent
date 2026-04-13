@@ -74,6 +74,8 @@ export interface ChatScreenProps {
   setInputValue: (val: string) => void;
   isProcessing: boolean;
   streamingText: string;
+  /** 流式 thinking 文本（Extended Thinking） */
+  thinkingText?: string;
   spinnerMode: SpinnerMode | 'idle';
   toolExecutions: ToolExecution[];
   pendingApproval: ApprovalRequest | null;
@@ -123,6 +125,13 @@ export function ChatScreen({
       <Static items={completedMessages}>
         {(msg) => <StaticMessageBlock key={msg.id} item={msg} />}
       </Static>
+
+      {/* 流式 thinking block（Extended Thinking） */}
+      {isProcessing && thinkingText && (
+        <Box marginBottom={0} paddingLeft={2}>
+          <Text dimColor italic>💭 {thinkingText.length > 300 ? thinkingText.slice(thinkingText.length - 300) + '...' : thinkingText}</Text>
+        </Box>
+      )}
 
       {isProcessing && streamingText && (() => {
         const rows = process.stdout.rows || 30;

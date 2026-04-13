@@ -1,6 +1,6 @@
 /**
  * FileReadTool — 读取文件内容
- * 支持指定行范围、自动检测编码
+ * 支持指定行范围、自动检测编码、图片读取（base64）
  */
 import { z } from 'zod';
 import { readFile, stat } from 'node:fs/promises';
@@ -14,9 +14,24 @@ const inputSchema = z.object({
   endLine: z.number().optional().describe('结束行号（1-indexed, inclusive）'),
 });
 
+/** 支持的图片 MIME 类型 */
+const IMAGE_EXTENSIONS: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.bmp': 'image/bmp',
+  '.ico': 'image/x-icon',
+};
+
+/** 最大图片大小 5MB */
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+
 export const FileReadTool = registerTool({
   name: 'file_read',
-  description: '读取指定文件的内容。可选指定行范围来读取大文件的部分内容。',
+  description: '读取指定文件的内容。支持文本文件（可选行范围）和图片文件（返回 base64）。',
   inputSchema,
   isReadOnly: true,
 
@@ -32,6 +47,22 @@ export const FileReadTool = registerTool({
         return { output: `[ERROR] ${absPath} 不是一个文件`, isError: true };
       }
 
+      // ── 图片文件检测 ──
+      const ext = path.extname(absPath).toLowerCase();
+      const mimeType = IMAGE_EXTENSIONS[ext];
+      if (mimeType) {
+        if (fileStat.size > MAX_IMAGE_SIZE) {
+          return { output: `[ERROR] 图片文件过大 (${(fileStat.size / 1024 / 1024).toFixed(1)}MB > 5MB 限制)`, isError: true };
+        }
+        const buffer = await readFile(absPath);
+        const base64 = buffer.toString('base64');
+        return {
+          output: `[图片文件] ${absPath} (${mimeType}, ${(fileStat.size / 1024).toFixed(1)}KB)`,
+          images: [{ type: mimeType, base64 }],
+        };
+      }
+
+      // ── 文本文件读取 ──
       const content = await readFile(absPath, 'utf-8');
       const lines = content.split('\n');
 

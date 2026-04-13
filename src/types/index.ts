@@ -142,6 +142,8 @@ export interface ToolResult<T = unknown> {
   data?: T;
   /** 是否执行出错 */
   isError?: boolean;
+  /** 图片附件（base64 编码，用于多模态 LLM 输入） */
+  images?: Array<{ type: string; base64: string }>;
 }
 
 /** 工具定义（buildTool 的输入） */

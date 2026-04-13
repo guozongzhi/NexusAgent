@@ -122,6 +122,10 @@ export class QueryEngine {
               usage: { promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens },
             };
 
+          case 'thinking_delta':
+            onThinking?.(event.text);
+            break;
+
           case 'retry':
             onRetry?.(event.attempt, event.maxRetries, event.delayMs, event.error);
             break;
