@@ -1,6 +1,6 @@
 {
   "name": "nexus-agent",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Nexus Agent — 基于 ReAct 范式的自主编程 CLI Agent",
   "type": "module",
   "private": false,

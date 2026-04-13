@@ -5,6 +5,37 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/)，
 版本号遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.4.0] - 2026-04-14
+
+### 新增 — 架构彻底重构与核心解耦
+
+- **拆分单体模块** — 终结 \`main.tsx\` 及 \`useAgentLoop\` 单体地狱，划分为清晰边界的 \`core/\` 核心驱动层。
+- **状态集中管理 (\`AgentState\`)** — 抽出基于发布/订阅模式的状态管理器，脱离 React 生命周期限制，支持无缝重渲染与强交互。
+- **纯函数流水线 (\`MessageReducer\`)** — 所有消息体使用不可变追加、更新策略，根除乱序与污染问题。
+- **并行工具分配器 (\`ToolRouter\`)** — 掌控权限审查与统一超时阻断机制（最高 120s 保护），大幅简化 QueryEngine 的职责。
+- **独立流适配器 (\`StreamProcessor\`)** — 全新设计 150ms 缓冲节流池，彻底解决超大数据量输出时的全屏闪现与算力枯竭问题。
+- **中断中枢 (\`InterruptController\`)** — 处理统一的 AbortSignal 生命周期与优雅终止。
+- **后台任务集群 (\`JobManager\`)** — 新增进程池订阅，托管支持流控截断的长期常驻任务（Server/Watcher）。
+
+### 新增 — 功能与 UI 革新
+
+- **增强思考呈现 (Extended Thinking)** — 原生支持分析型模型流式思考文本 (`<thinking>`)，置于浅灰色折叠区渲染，不再破坏常规对话框。
+- **多行编辑与回溯 (\`MultiLineInput\`)** — 替换原有单行 \`TextInput\` 组件，增加由 \`InputHistory\` 驱动的 \`↑\` \`↓\` 指令级记录巡回导航。
+- **启发式输入智能提示 (\`useProactiveTips\`)** — 根据当前输入的命令符或触发词，展示防呆指南与隐藏技巧快捷方式。
+- **三态引擎模式 (\`AgentMode\`)** — \`Shift + Tab\` 热键一键轮询 \`act\`（标准）、\`plan\`（严格只读）和 \`auto-approve\`（超级静默自动化）三种执行模式。
+- **微观统计分析** — 状态栏加入精确进度计算。结合服务器下行真实 Token 与本地估算，实现 \`CostTracker\` USD 精准级成本统计。
+
+### 新增 — 工具与服务补完
+
+- **工具库扩编 (12 → 16)** — 新增 \`JobManageTool\` (守护进程), \`MultiEditTool\` (多区块替换), \`SymbolSearchTool\` (符号索引查询), \`MemoryTool\` (外部记忆调用)。
+- **自动化防御体系扩展: 快照还原 (\`FileVault\`)** — 基于本地文件加密与 MD5，为高危变更动作建立修改前数据快照，提供高强度级容灾及可回溯管理。
+- **系统层 L2/L3 自治发现** — 后台触发 \`DiscoveryService\` 探索和推测项目技术栈画像，并通过 \`WorkspaceGraph\` 获取微观指针，利用 \`DistillationService\` 在长时对话中提纯避坑经验注入长期记忆。
+
+### 变更
+
+- 所有内部定时轮询和流解析模块均加入进程优雅退出（SIGINT/SIGTERM）析构响应。
+- 移除了对旧版历史架构的全局依赖，改为 \`sessionStore\` 接口对接。
+
 ## [0.3.0] - 2026-04-10
 
 ### 新增 — 功能扩展

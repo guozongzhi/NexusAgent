@@ -53,23 +53,29 @@ tests/compact.test.ts        # 对应模块名 + .test.ts
 
 ```
 src/
-├── main.tsx              # 入口：Ink App + 查询循环
-├── QueryEngine.ts        # ReAct 引擎 + 断路器
-├── Tool.ts               # 工具注册表
+├── main.tsx              # 入口：Ink App + 参数解析
+├── QueryEngine.ts        # 流式核心交互引挚
+├── Tool.ts               # 工具注册表定义
 ├── context.ts            # System Prompt + Planner 注入
 ├── config.ts             # 配置管理 (含 MCP Servers)
 ├── commands/             # 斜杠命令 (/mcp, /config...)
 ├── components/           # Ink UI 组件
-├── tools/                # 工具实现 (含 TaskManageTool)
-├── services/             # 业务服务
-│   ├── api/              # LLM 适配器
-│   ├── compact/          # 上下文压缩
-│   ├── history/          # 会话管理
-│   ├── mcp/              # MCP 客户端管理器
-│   └── agent/            # Agent 状态机与规划
-├── security/             # 安全防护 + 持久化权限
-├── types/                # 类型定义
-└── utils/                # 工具函数
+├── core/                 # [核心架构层] 包含全局状态机 AgentState, 消息池 MessageReducer, 分发 ToolRouter, 缓冲 StreamProcessor 等
+├── hooks/                # 封装级 Hook 函数 (useAgentLoop 等)
+├── screens/              # 顶层页面展示视图 (ChatScreen)
+├── tools/                # 具体工具实现 (共 16 种，包含网络抓取、后台管控、文件编辑等)
+├── services/             # 高级逻辑服务
+│   ├── api/              # LLM 跨平台适配层
+│   ├── compact/          # 内存折叠压缩微引擎
+│   ├── history/          # 会话级长效缓存
+│   ├── mcp/              # MCP 外部工具外挂守护
+│   ├── memory/           # 包含 L2 Discovery 和 L3 Distillation 记忆中枢网络
+│   ├── sandbox/          # 回滚保护层 (FileVault)
+│   ├── telemetry/        # 开销分析网络 (CostTracker)
+│   └── agent/            # Agent 任务分发机器管理
+├── security/             # AI 护栏系统及访问持久化白名单
+├── types/                # 全局 Typescript 类型定准
+└── utils/                # 纯净零依赖工具包
 ```
 
 ## 贡献流程

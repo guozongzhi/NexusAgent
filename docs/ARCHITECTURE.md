@@ -1,282 +1,87 @@
 # Nexus Agent 架构设计
 
-本文档描述 Nexus Agent 的系统架构和核心设计决策。
+本文档反映了 Nexus Agent v0.4.0（解体型架构）的设计哲学及其数据流特征。
 
 ## 设计哲学
 
-1. **Agent 而非 Copilot** — 直接执行操作，而不是仅仅给出建议
-2. **安全优先** — 分级权限控制，高危操作强制拦截
-3. **流式优先** — 所有 LLM 交互使用 SSE 流式输出
-4. **可扩展** — 工具/命令/LLM 适配器均为插件化注册，支持 MCP 外挂
+1. **核心逻辑绝对自治化** — 废弃单文件（main.tsx / useAgentLoop）造成的强状态互锁；利用独立组件 (`AgentState`) 配合事件发布。
+2. **不可变数据流水线** — 模型输出经过解构必须先经过 `MessageReducer` 做无损映射与变更累加。
+3. **Agent 引擎非绑定** — 并行的工具链审批与超时打断均脱层（移步 `ToolRouter`），让 ReAct 环专注文字流推理。
+4. **插件与工具原生隔离** — FileVault, CostTracker 等服务级原子功能具备自身独立的 `io` 管理而无须牵扯主进程栈。
 
-## 系统架构
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│                     Terminal (stdin/stdout)                    │
-└────────────────────────────┬─────────────────────────────────┘
-                             │
-┌────────────────────────────▼─────────────────────────────────┐
-│                      Ink UI Layer                             │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌─────────────────┐ │
-│  │ Welcome  │ │ Spinner  │ │ToolPanel │ │PermissionPrompt │ │
-│  └──────────┘ └──────────┘ └──────────┘ └─────────────────┘ │
-│  ┌──────────────────────────────────────┐ ┌───────────────┐ │
-│  │          StatusBar                    │ │  Onboarding   │ │
-│  └──────────────────────────────────────┘ └───────────────┘ │
-└────────────────────────────┬─────────────────────────────────┘
-                             │
-┌────────────────────────────▼─────────────────────────────────┐
-│                      main.tsx (App)                           │
-│                                                               │
-│  handleSubmit() ──► 命令路由 ──► CommandRouter                │
-│       │                    ├─ /mcp (MCP 管理)                │
-│       │                    ├─ /memory (长效记忆)              │
-│       │                    ├─ /skills, /sk (技能系统)         │
-│       │                    ├─ /commit, /diff, /init (Git)    │
-│       │                    └─ /config, /compact, /cost...    │
-│       ▼                                                       │
-│  buildSystemPromptAsync() ──► context.ts + planner + NEXUS.md│
-│       │                       + Long-term Memory 注入        │
-│       │                                                       │
-│  autoCompactIfNeeded() ──► compact/ (MicroCompact + Full)    │
-│       │                                                       │
-│  MCP Tool Merge ──► local tools + mcpManager.getAllTools()    │
-│       │                                                       │
-│  QueryEngine.run() ──► ReAct 循环 + 断路器 + 60s 超时保护    │
-└────────────────────────────┬─────────────────────────────────┘
-                             │
-    ┌────────────────────────┼────────────────────────┐
-    ▼                        ▼                        ▼
-┌──────────────┐  ┌───────────────────┐  ┌────────────────────┐
-│ LLM Adapter  │  │  Tool Registry    │  │  Security Layer    │
-│              │  │  (12 tools)       │  │                    │
-│ adapterFact- │  │                   │  │  validatePath()    │
-│ ory.ts 工厂  │  │  bash             │  │  validateCommand() │
-│              │  │  file_read/write  │  │  validateWriteSize │
-│ createAdapt- │  │  file_edit        │  │  validateSensitive │
-│ er(config)   │  │  list_dir/glob    │  │                    │
-│              │  │  grep / note      │  │  permissionStore   │
-│ 支持:        │  │  task_manage      │  │  (持久化权限)      │
-│ · OpenAI     │  │  web_fetch        │  │                    │
-│ · Ollama     │  │  web_search       │  │  pathGuard         │
-│ · vLLM       │  │  notebook_edit    │  │  (路径+命令校验)   │
-│ · LiteLLM    │  │  ─────────────    │  │                    │
-│              │  │  mcp__* (动态)    │  │  --dangerously-    │
-│              │  │  registerTool()   │  │  skip-permissions  │
-└──────────────┘  └───────────────────┘  └────────────────────┘
-                             │
-              ┌──────────────▼──────────────┐
-              │     MCP Client Manager      │
-              │                             │
-              │  connectAll() → 并行启动     │
-              │  getAllTools() → 拉取工具列表 │
-              │  callTool() → 跨进程 RPC     │
-              │  closeAll() → 优雅退出       │
-              │                             │
-              │  stdio transport ── 子进程   │
-              └─────────────────────────────┘
-```
-
-## 核心模块
-
-### 1. QueryEngine (`src/QueryEngine.ts`)
-
-ReAct 查询引擎，负责 LLM 交互循环：
-
-- **输入**: System Prompt + Messages + Tool Definitions (本地 + MCP 合并)
-- **处理**: 流式解析 SSE → 提取 tool_call → 权限检查 → 执行 → 追加结果 → 循环
-- **输出**: QueryResult { text, usage }
-- **熔断**: 连续 3 次工具执行错误自动挂起（Circuit Breaker）
-
-关键设计：
-- 单次 `run()` 调用最多触发 100 轮 tool_call 循环（支持大规模自动任务）
-- 同一 turn 多个 tool_call 并发执行（`Promise.allSettled`），审批串行
-- 每个工具调用附带 60 秒统一超时保护（`Promise.race`）
-- MCP 工具以 `mcp__<server>__<tool>` 前缀标识，单独路由到外部进程
-- `consecutiveErrors` 计数器防止死循环吞噬 token
-- `AbortController` 支持用户 Ctrl+C 中断整个 ReAct 链路
-
-### 2. Tool 系统 (`src/Tool.ts` + `src/tools/`)
-
-插件化工具注册机制：
-
-```typescript
-registerTool({
-  name: 'my_tool',
-  description: '工具描述',
-  inputSchema: z.object({ ... }),
-  authType: 'requires_confirm',  // 'safe' | 'requires_confirm' | 'dangerous'
-  async call(input, context) { ... }
-});
-```
-
-设计要点：
-- Zod schema 自动转换为 OpenAI function parameters
-- `authType` 三级权限：`safe` 自动放行 / `requires_confirm` 可 Always Allow / `dangerous` 强制拦截
-- 兼容旧 `isReadOnly` 字段，自动映射到 `safe` / `requires_confirm`
-
-### 3. 权限系统 (`src/security/`)
+## 系统架构总览
 
 ```
-工具调用请求
-    │
-    ├─ authType === 'safe' ──► 直接执行
-    │
-    ├─ authType === 'requires_confirm'
-    │     ├─ permissionStore 命中 ──► 自动执行 (跨会话 Always Allow)
-    │     └─ 未命中 ──► PermissionPrompt (Y/N/A)
-    │                     └─ A ──► 写入 ~/.nexus/permissions.json
-    │
-    └─ authType === 'dangerous' ──► 强制 PermissionPrompt (无视 Always Allow)
+┌──────────────────────────────────────────────────────────────────┐
+│                           Terminal UI Layer                        │
+│ ┌───────────────┐ ┌───────────────┐ ┌───────────────┐ ┌────────┐ │
+│ │ MultiLineInput│ │ ChatScreen    │ │ ToolPanel     │ │ Spinner│ │
+│ └───────────────┘ └───────────────┘ └───────────────┘ └────────┘ │
+└───────────────────────────────┬──────────────────────────────────┘
+                                │ (Subscribe / Dispatch)
+┌───────────────────────────────▼──────────────────────────────────┐
+│                           useAgentLoop.ts                        │
+│  The Orchestrator - 仅负责组件装配，不持有具体业务状态                  │
+└──────┬───────────────┬───────────────────────────┬───────────────┘
+       │               │                           │
+┌──────▼──────┐ ┌──────▼──────────┐ ┌──────────────▼─────────────┐
+│  AgentState │ │ MessageReducer  │ │      QueryEngine.ts        │
+│ (订阅状态机)   │ │ (不可变消息累加)    │ │ (流式 ReAct 引擎 / SSE 推理) │
+└─────────────┘ └─────────────────┘ └──────────────┬─────────────┘
+                                                   │
+┌──────────────────────────────────────────────────▼─────────────┐
+│                           ToolRouter.ts                          │
+│            (Tool 并发派发 / 统一超时隔离 / Prompt 对话桥接)          │
+└──────┬────────────────────────┬──────────────────────────┬───────┘
+       │                        │                          │
+┌──────▼──────────┐      ┌──────▼────────┐         ┌───────▼────────┐
+│  Local Tools    │      │ MCP SubProcess│         │ PermissionMgr  │
+│ (16 Built-ins)  │      │ (跨进程 RPC)   │         │ (权限与放行判定) │
+└──────┬──────────┘      └───────────────┘         └────────────────┘
+       │
+┌──────▼───────────────────────────────────────────────────────────┐
+│                          Core Services                           │
+│ ┌───────────────┐ ┌────────────────┐ ┌─────────────────────────┐ │
+│ │  FileVault    │ │   JobManager   │ │    DistillationService  │ │
+│ │ (前置修改防丢)   │ │ (长后台服务驻留) │ │    (L3 对话复盘引擎)       │ │
+│ └───────────────┘ └────────────────┘ └─────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-持久化存储支持全局级 (`alwaysAllowedGlobal`) 和项目级 (`alwaysAllowedProject`) 两层粒度。
+## 核心模块演进详细分析
 
-### 4. MCP 客户端 (`src/services/mcp/`)
+### 1. 状态管理 (`src/core/AgentState.ts`)
+完全剥离自 React Hooks，采用类似 Zustand 的实现逻辑：
+- 管理包含 `apiReady`, `streamingText`, `spinnerMode` 及其计算推移相关的数十个复合字段。
+- 原生开放 `.subscribe` 和 `.getState` 能力。`main.tsx` 使用 `useSyncExternalStore` 高阶绑定渲染。避免渲染洪峰时的死锁崩溃。
 
-通过 `@modelcontextprotocol/sdk` 实现标准 MCP 客户端：
-- 基于 stdio transport 管理多个外部子进程服务器
-- 自动拉取工具列表并以 `mcp__server__tool` 格式合并到 LLM function calling
-- 跨进程 RPC 调用与错误隔离
+### 2. 信息归纳器 (`src/core/MessageReducer.ts`)
+采用不可变更新范式。在追加 LLM 工具参数列表（Tools args）、Extended Thinking 流长片数据时，隔离所有的脏数据操作，使得 `history` 的每一次更新都是线程安全的全新实例。
 
-### 5. Agent Planner (`src/services/agent/planner.ts`)
+### 3. 工具调度分发 (`src/core/ToolRouter.ts`)
+不再内嵌在 QueryEngine 内，它的责任从 `QueryEngine` 中摘出：
+- **第一阶段 - 权限审批**：先预存所有合法校验的 tool_call 数据（区分本地函数还是 MCP 外部 RPC 请求），并配合 `PermissionManager` 抛出需要阻断的手动拦截器。
+- **第二阶段 - 分级并发**：对于读盘操作限定 30 秒超时、对于覆写操作 60 秒超时、对 Bash 环境 120 秒超时。执行中只要满足条件必定阻断该 Tool 继续挂起大模型主推理树。
 
-Agent 状态机与任务管理：
-- 三种模式: `interactive` | `plan` | `execute`
-- 任务清单通过 `getPlannerContext()` 动态注入 System Prompt
-- `TaskManageTool` 提供给 LLM 自主建立/更新/完成任务的能力
+### 4. 数据平滑模块 (`src/core/StreamProcessor.ts`)
+因为大模型开启 `<thinking>` 的大推断深度时会有密集的字符雨输出，这个 Buffer 类使用 150ms 节流环技术，仅在终端满足渲染帧率时一次性 Dump 数据至 React UI，显著降低重绘算力。
 
-### 6. 上下文压缩 (`src/services/compact/`)
+### 5. 后台控制块 (`src/core/JobManager.ts`)
+新增的异步任务中转站。在执行例如 `npm run dev` 或 `tail -f` 时：
+- `JobManageTool` 进行注册挂载，返回非阻塞标识符给 `QueryEngine`。
+- LLM 无需坐等其关闭（它可能永不关闭）。
+- JobManager 支持拦截终端异常，且一旦 NexusAgent 自身遭受 SIGINT 信号则负责自动斩杀其下的僵尸挂钩进程。
 
-三层压缩策略：
+### 6. 长效记忆推演区 (`src/services/memory/`)
+由原始的机械化存取转为全自动化服务群：
+- **DiscoveryService**: 无需 Token，冷启时主动扫描判断如 `React`, `Golang`, `Monorepo` 等特征并向 System 注入 `ProjectProfile`。
+- **WorkspaceGraph**: 主动触发，借助 Token 分析高阶结构指针（指派为 L2 Pointers）。
+- **DistillationService**: 在大对话轮次触发后，主动在后台调用副模型复盘之前错误的分析和犯过的错，并持久化到内存网络。防范重复翻车。
 
-| 层级 | 触发条件 | 成本 | 策略 |
-|------|---------|------|------|
-| MicroCompact | token > 50% 窗口 | 零 | 清理旧 tool_result 内容 |
-| Full Compact | token > 80% 窗口 | 1 次 LLM 调用 | 9 段式结构化摘要 |
-| Truncate | Fallback | 零 | 丢弃最旧消息 |
+### 7. 数据与防灾 (`src/services/sandbox/FileVault.ts`)
+工具 `file_edit`, `multi_edit` 在写入工作区物理文件之前，会被该金库模块拦截进行 SHA / MD5 哈希校验备份。以保留十次级别的 Snapshot 数据源容载；支持通过后台挂载实现撤回操作。
 
-### 7. UI 层 (`src/components/`)
+## 扩展与二次开发说明
 
-基于 Ink (React for CLI) 的终端 UI：
-
-- **静态区域**: 已完成的消息 (append-only，不重绘)
-- **动态区域**: 当前流式输出 + 输入框 + 状态栏
-
-避免闪烁的关键：消息完成后移入 `<Static>` 区域，终端只重绘动态区域。
-
-## 数据流
-
-```
-用户输入
-  │
-  ├─ 以 / 开头? ──► CommandRouter ──► 直接返回结果
-  │                    └─ /mcp add/rm/list → 管理外部工具
-  │
-  └─► 追加到 historyRef
-        │
-        ├─► autoCompactIfNeeded()
-        │     ├─ MicroCompact (清理旧 tool_result)
-        │     └─ Full Compact (LLM 摘要, 含断路器)
-        │
-        ├─► truncateMessages() (最终安全截断)
-        │
-        ├─► Merge: getAllFunctionDefs() + mcpManager.getAllTools()
-        │
-        └─► QueryEngine.run()
-              │
-              ├─ tool_call(mcp__*)  ──► mcpManager.callTool()
-              ├─ tool_call(local)   ──► getTool() → tool.call()
-              │    └─ 权限检查: safe → auto / requires_confirm → store/prompt / dangerous → prompt
-              └─ text → 完成，移入 Static 区域
-```
-
-## 配置系统
-
-```
-优先级: 命令行参数 > 环境变量 > ~/.nexus/config.json > 默认值
-Schema: Zod 运行时校验（NexusConfigFileSchema.strict()）
-
-~/.nexus/
-├── config.json          # 用户配置 (含 mcpServers)，Zod 运行时校验
-├── permissions.json     # 持久化权限 (Always Allow)
-├── memory.json          # 跨会话长效记忆
-├── sessions/            # 会话历史（UUID 索引）
-│   ├── index.json       # 会话元数据索引 (cwd, createdAt, lastActive)
-│   └── <uuid>.json      # 独立会话文件
-└── skills/              # 可编程技能配置
-    └── <name>.json      # 技能定义 (name, description, prompt)
-
-项目级:
-└── NEXUS.md             # 项目 AI 行为规范
-```
-
-### 8. 长效记忆系统 (`src/services/memory/`)
-
-- `memoryStore.ts` 管理 `~/.nexus/memory.json` 持久化存储
-- 支持 `global` 和 `project` 两种作用域
-- `buildSystemPromptAsync()` 在每次 Query 前自动注入相关记忆到 `<LONG_TERM_MEMORY>` 标签
-- `/memory add|rm|list|clear|global` 命令行管理
-
-### 9. 技能系统 (`src/services/skills/`)
-
-- `skillManager.ts` 解析 `~/.nexus/skills/` 目录下的 JSON 技能文件
-- `/skills list|add|rm` + `/sk <name>` 快捷执行
-- 通过 `rewrittenQuery` 机制将技能 prompt 重定向到 QueryEngine
-
-### 10. LLM 适配器工厂 (`src/services/api/adapterFactory.ts`)
-
-- `createAdapter(config)` 根据 `provider` 字段分派适配器实例
-- `ollama` 自动修正 baseURL 为 `localhost:11434/v1`
-- 保证多供应商路由真正工作，而不是声明式空挂
-
-## 扩展指南
-
-### 添加新工具
-
-1. 在 `src/tools/` 创建 `MyTool.ts`
-2. 使用 `registerTool()` 注册，指定 `authType`
-3. 在 `src/tools/index.ts` 中 import
-4. 完成——工具会自动出现在 LLM 的可用工具列表中
-
-### 添加新命令
-
-在 `src/commands/router.ts` 的 switch 中添加新 case。
-
-### 添加 MCP 外部工具
-
-```bash
-/mcp add <name> <command> [args...]
-# 例：/mcp add sqlite npx -y @modelcontextprotocol/server-sqlite --db test.db
-```
-
-或直接编辑 `~/.nexus/config.json` 的 `mcpServers` 字段。
-
-### 支持新的 LLM 提供商
-
-实现 `LLMAdapter` 接口，并在 `adapterFactory.ts` 中注册分派逻辑：
-
-```typescript
-interface LLMAdapter {
-  name: string;
-  stream(params: LLMStreamParams): AsyncIterable<StreamEvent>;
-}
-```
-
-### CLI 参数
-
-```bash
-nexus                              # 交互模式
-nexus "你的任务描述"                # 一次性非交互模式
-nexus --dangerously-skip-permissions  # CI/CD 静默模式（跳过所有权限确认）
-```
-
-### 构建与分发
-
-```bash
-bun run build         # 使用 Bun compile 打包为独立二进制
-bun run typecheck     # TypeScript 严格模式检查
-bun test              # 59 个测试用例
-npm publish           # 发布到 npm (需先 npm login)
-```
+- 只要在 `src/tools/` 下新建基于 Zod 的工具约束描述且通过 `registerTool`，系统会自动绑定到 `ToolRouter` 解析池；所有类型的返回值一律打包进入 `ToolResultContentBlock` 发往 GPT。
+- 修改全局模式可以通过调用 `AgentMode`，对于只读任务建议引导切换至 `plan` 以大幅降低因为 Token 幻觉造成的项目污染事故。
