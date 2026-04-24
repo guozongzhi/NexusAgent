@@ -97,12 +97,7 @@ export function appendSystemMessage(messages: CompletedMessage[], content: strin
   return appendMessage(messages, 'system', content);
 }
 
-/**
- * 追加思考过程消息
- */
-export function appendThinkingMessage(messages: CompletedMessage[], content: string): CompletedMessage[] {
-  return appendMessage(messages, 'thinking', content);
-}
+
 
 // ─── 工具执行操作 ──────────────────────────────────────
 

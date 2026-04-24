@@ -56,6 +56,7 @@ export interface AgentStateSnapshot {
   isLearning: boolean;
   /** 当前流式 thinking 文本（Extended Thinking） */
   thinkingText: string;
+}
 
 type Listener = () => void;
 

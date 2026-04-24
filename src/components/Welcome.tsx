@@ -43,11 +43,12 @@ export function printWelcome(version: string, cwd: string, model: string): void 
   // ── 1. 左侧 Logo 与右侧文本完美左对齐 ──
   const rightLines = [
     `${chalk.bold.whiteBright('Nexus Agent')} ${chalk.dim(`v${version}`)}`,
+    `${chalk.dim('Author:     ')} ${chalk.greenBright('guozongzhi')}`,
     `${chalk.dim('Model:      ')} ${chalk.whiteBright(model)}`,
     `${chalk.dim('Workspace:  ')} ${chalk.gray(shortCwd)}`,
   ];
 
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < rightLines.length; i++) {
     const rawLogo = NEXUS_LOGO_COMPACT[i] || '';
     const logoColor = i === 0 ? chalk.cyanBright.bold : i === 1 ? chalk.cyan.bold : chalk.blueBright.bold;
     const logoPart = logoColor(rawLogo);

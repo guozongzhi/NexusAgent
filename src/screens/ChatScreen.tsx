@@ -101,6 +101,7 @@ export function ChatScreen({
   setInputValue,
   isProcessing,
   streamingText,
+  thinkingText,
   spinnerMode,
   toolExecutions,
   pendingApproval,

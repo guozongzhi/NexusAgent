@@ -530,6 +530,7 @@ export function useAgentLoop({
     setInputValue: (v: string) => agentState.setState({ inputValue: v }),
     isProcessing: snapshot.isProcessing,
     streamingText: snapshot.streamingText,
+    thinkingText: snapshot.thinkingText,
     spinnerMode: snapshot.spinnerMode,
     toolExecutions: snapshot.toolExecutions,
     pendingApproval: snapshot.pendingApproval,
