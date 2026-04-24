@@ -1,3 +1,0 @@
-[install]
-# 临时跳过TLS验证以完成依赖安装
-tls_reject_unauthorized = false
