@@ -8,8 +8,8 @@
  */
 export function shortenPath(p: string): string {
   const home = process.env['HOME'] ?? '';
-  if (home && p.startsWith(home)) {
-    return '~' + p.slice(home.length);
+  if (home && (p === home || p.startsWith(home + '/'))) {
+    return p === home ? '~' : '~' + p.slice(home.length);
   }
   return p;
 }
