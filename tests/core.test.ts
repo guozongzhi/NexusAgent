@@ -19,7 +19,7 @@ describe('工具注册表', () => {
     const names = tools.map(t => t.name);
     expect(names.length).toBe(expectedToolNames.length);
     expect(new Set(names).size).toBe(names.length);
-    expect(names.sort()).toEqual([...expectedToolNames].sort());
+    expect([...names].sort()).toEqual([...expectedToolNames].sort());
   });
 
   test('工具查找正确', () => {

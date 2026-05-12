@@ -168,7 +168,7 @@ Nexus Agent 目前共搭载 **16 大工具**：
 | `glob` | 路径统配查找引擎 | ✅ 只读 |
 | `grep` | 基于正则的超规模文字遍历搜索 | ✅ 只读 |
 | `symbol_search`| 大模块索引层析查阅 | ✅ 只读 |
-| `note` | Agent 思维涂鸦板 | ✅ 只读 |
+| `note` | Agent 思维涂鸦 | ✅ 只读 |
 | `task_manage` | Planner 架构任务栈管理 | 🔒 需确认 |
 | `web_fetch` | JSON/HTML 网页无头静默拉取 | ✅ 只读 |
 | `web_search` | DuckDuckGo 深层引擎调度 | ✅ 只读 |
