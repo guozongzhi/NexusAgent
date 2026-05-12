@@ -172,7 +172,7 @@ Nexus Agent 目前共搭载 **16 大工具**：
 | `task_manage` | Planner 架构任务栈管理 | 🔒 需确认 |
 | `web_fetch` | JSON/HTML 网页无头静默拉取 | ✅ 只读 |
 | `web_search` | DuckDuckGo 深层引擎调度 | ✅ 只读 |
-| `memory_tool` | 长效经验及避坑规范提取器 | ✅ 只读 |
+| `memory` | 长效经验及避坑规范提取器 | 🔒 需确认 |
 
 ## 命令参考
 

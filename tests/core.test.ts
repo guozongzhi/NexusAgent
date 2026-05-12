@@ -8,20 +8,24 @@ import { shortenPath, formatTokens } from '../src/utils/path.ts';
 import { buildSystemPrompt } from '../src/context.ts';
 
 describe('工具注册表', () => {
-  test('所有工具应该被注册', () => {
+  const expectedToolNames = [
+    'bash', 'job_manage', 'file_read', 'file_write', 'file_edit', 'multi_edit',
+    'notebook_edit', 'list_dir', 'glob', 'grep', 'symbol_search', 'note',
+    'task_manage', 'web_fetch', 'web_search', 'memory'
+  ] as const;
+
+  test('所有工具应该被注册且名称准确', () => {
     const tools = getAllTools();
-    expect(tools.length).toBe(16);
+    const names = tools.map(t => t.name);
+    expect(names.length).toBe(expectedToolNames.length);
+    expect(new Set(names).size).toBe(names.length);
+    expect([...names].sort()).toEqual([...expectedToolNames].sort());
   });
 
   test('工具查找正确', () => {
-    expect(getTool('bash')).toBeDefined();
-    expect(getTool('file_read')).toBeDefined();
-    expect(getTool('file_write')).toBeDefined();
-    expect(getTool('file_edit')).toBeDefined();
-    expect(getTool('glob')).toBeDefined();
-    expect(getTool('grep')).toBeDefined();
-    expect(getTool('list_dir')).toBeDefined();
-    expect(getTool('note')).toBeDefined();
+    for (const name of expectedToolNames) {
+      expect(getTool(name)).toBeDefined();
+    }
   });
 
   test('查找不存在的工具返回 undefined', () => {
@@ -30,7 +34,7 @@ describe('工具注册表', () => {
 
   test('getAllFunctionDefs 返回正确的 OpenAI 格式', () => {
     const defs = getAllFunctionDefs();
-    expect(defs.length).toBe(16);
+    expect(defs.length).toBe(expectedToolNames.length);
 
     for (const def of defs) {
       expect(def.type).toBe('function');
@@ -40,15 +44,13 @@ describe('工具注册表', () => {
     }
   });
 
-  test('每个工具都有 isReadOnly 属性', () => {
+  test('每个工具都有 isReadOnly 属性且 memory 为可写', () => {
     const tools = getAllTools();
     const readOnlyTools = tools.filter(t => t.isReadOnly);
     const writeTools = tools.filter(t => !t.isReadOnly);
-    
-    // file_read, glob, grep, list_dir, note, web_fetch, web_search, symbol_search 是只读
-    expect(readOnlyTools.length).toBe(8);
-    // bash, file_write, file_edit, task_manage, notebook_edit, multi_edit, job_manage, memory 是写入
-    expect(writeTools.length).toBe(8);
+
+    expect(readOnlyTools.length + writeTools.length).toBe(expectedToolNames.length);
+    expect(getTool('memory')?.isReadOnly).toBe(false);
   });
 });
 
@@ -61,6 +63,12 @@ describe('shortenPath — 路径缩短', () => {
 
   test('非 HOME 路径保持不变', () => {
     expect(shortenPath('/etc/config')).toBe('/etc/config');
+  });
+
+  test('相似前缀但非 HOME 子路径不应被缩短', () => {
+    const home = process.env['HOME'] ?? '/Users/test';
+    const result = shortenPath(`${home}-backup/projects/myapp`);
+    expect(result).toBe(`${home}-backup/projects/myapp`);
   });
 });
 
